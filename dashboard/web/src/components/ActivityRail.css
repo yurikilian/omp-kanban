@@ -31,12 +31,12 @@
 }
 
 .activity-rail-item:focus-visible {
-  outline: 2px solid var(--msg-user-border);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
 .activity-rail-item.active {
-  background: var(--msg-user-border);
+  background: var(--primary);
   color: white;
 }
 

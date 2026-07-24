@@ -2,6 +2,15 @@
 
 :root {
   /* Light Mode - Default */
+  /* Semantic Brand Palette */
+  --primary: #0d6efd;
+  --success: #198754;
+  --warning: #ffc107;
+  --danger: #dc3545;
+  --neutral: #e8e8e8;
+  --sidebar-bg: #1a1a2e;
+  
+  /* Layout & Surface Colors */
   --bg-primary: #f5f5f5;
   --bg-surface: #ffffff;
   --bg-elevated: #fafafa;

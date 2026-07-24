@@ -7,6 +7,49 @@
   flex-direction: column;
   padding: 1rem 0;
   gap: 0.5rem;
+  transition: width 0.3s ease-in-out;
+}
+
+.activity-rail.collapsed {
+  width: 80px;
+}
+
+.activity-rail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  margin-bottom: 0.5rem;
+}
+
+.activity-rail-toggle:hover {
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 1);
+}
+
+.activity-rail-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.activity-rail-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.activity-rail-toggle-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 1.5;
 }
 
 .activity-rail-item {

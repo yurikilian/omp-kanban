@@ -196,3 +196,116 @@ describe('Dark Sidebar with Labels & Feedback (E2-S1)', () => {
     });
   });
 });
+
+describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
+  beforeEach(() => {
+    // Clear localStorage before each test
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  describe('E2-S2-AC1: Labels hide when collapsed, rail narrows to icon-only; accessible names retained', () => {
+    it('toggle collapses: labels hidden, rail icon-only, each item retains title/aria-label', () => {
+      const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      // Find and click toggle button
+      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      expect(toggleBtn).toBeInTheDocument();
+      
+      // Initially, labels should be visible
+      expect(screen.getByText('Sessions')).toBeInTheDocument();
+      expect(screen.getByText('Observability')).toBeInTheDocument();
+      expect(screen.getByText('Configurations')).toBeInTheDocument();
+      
+      // Click toggle to collapse
+      fireEvent.click(toggleBtn);
+      
+      // Labels should now be hidden
+      expect(screen.queryByText('Sessions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Observability')).not.toBeInTheDocument();
+      expect(screen.queryByText('Configurations')).not.toBeInTheDocument();
+      
+      // Rail should have collapsed class
+      const rail = container.querySelector('.activity-rail');
+      expect(rail).toHaveClass('collapsed');
+      
+      // Each section button should still retain its title for accessibility
+      const sessionBtn = screen.getByTitle('Sessions');
+      const obsBtn = screen.getByTitle('Observability');
+      const configBtn = screen.getByTitle('Configurations');
+      
+      expect(sessionBtn).toBeInTheDocument();
+      expect(obsBtn).toBeInTheDocument();
+      expect(configBtn).toBeInTheDocument();
+    });
+  });
+
+  describe('E2-S2-AC2: Collapse/expand toggle restores on re-toggle', () => {
+    it('toggle again expands: labels reappear and full width restored', () => {
+      const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      
+      // Collapse
+      fireEvent.click(toggleBtn);
+      expect(screen.queryByText('Sessions')).not.toBeInTheDocument();
+      
+      // Expand
+      fireEvent.click(toggleBtn);
+      expect(screen.getByText('Sessions')).toBeInTheDocument();
+      expect(screen.getByText('Observability')).toBeInTheDocument();
+      expect(screen.getByText('Configurations')).toBeInTheDocument();
+      
+      // Rail should not have collapsed class
+      const rail = container.querySelector('.activity-rail');
+      expect(rail).not.toHaveClass('collapsed');
+    });
+  });
+
+  describe('E2-S2-AC3: Collapsed state persists to localStorage and restores on reload', () => {
+    it('collapsed state initializes from localStorage on mount', () => {
+      // Set collapsed state in localStorage
+      localStorage.setItem('sidebar-collapsed', 'true');
+      
+      const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      // Labels should be hidden because localStorage says it's collapsed
+      expect(screen.queryByText('Sessions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Observability')).not.toBeInTheDocument();
+      
+      // Rail should have collapsed class
+      const rail = container.querySelector('.activity-rail');
+      expect(rail).toHaveClass('collapsed');
+    });
+
+    it('toggles persist collapsed state to localStorage', () => {
+      render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      // Initially expanded, localStorage should be false or not set
+      expect(localStorage.getItem('sidebar-collapsed')).not.toBe('true');
+      
+      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      
+      // Click to collapse
+      fireEvent.click(toggleBtn);
+      expect(localStorage.getItem('sidebar-collapsed')).toBe('true');
+      
+      // Click to expand
+      fireEvent.click(toggleBtn);
+      expect(localStorage.getItem('sidebar-collapsed')).toBe('false');
+    });
+  });
+
+  describe('E2-S2-AC4: Width transition is animated (not instant snap)', () => {
+    it('rail element carries a width CSS transition so the change animates', () => {
+      const cssPath = path.join(__dirname, './ActivityRail.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+      
+      // Verify .activity-rail has a transition property that includes width
+      expect(css).toMatch(/\.activity-rail[\s\S]*?\{[\s\S]*?transition:[\s\S]*?width/);
+      
+      // Verify the rule includes ease-in-out or similar timing function (not just instant)
+      expect(css).toMatch(/\.activity-rail[\s\S]*?\{[\s\S]*?transition:[\s\S]*?(ease|linear|cubic-bezier)/);
+    });
+  });
+});

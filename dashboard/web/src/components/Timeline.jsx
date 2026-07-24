@@ -45,6 +45,57 @@ function isToolRole(role) {
   return role === 'tool' || role === 'tool_result' || role === 'tool_execution';
 }
 
+function isUserRole(role) {
+  return role === 'user';
+}
+
+/**
+ * Groups events into turn blocks.
+ * - Leading non-user events form one 'leading' group
+ * - Each user event starts a 'turn' group containing it + following non-user events until next user
+ * - Returns array of { groupType, userEvent?, followingEvents }
+ */
+function groupEventsByTurn(events) {
+  if (!events || events.length === 0) return [];
+
+  const groups = [];
+  let leadingEvents = [];
+  let foundFirstUser = false;
+  let currentTurnUser = null;
+  let currentTurnFollowing = [];
+
+  for (const ev of events) {
+    if (isUserRole(ev.role)) {
+      // Hit a user event; finalize any pending groups
+      if (!foundFirstUser && leadingEvents.length > 0) {
+        groups.push({ groupType: 'leading', followingEvents: leadingEvents });
+        leadingEvents = [];
+      } else if (currentTurnUser !== null) {
+        groups.push({ groupType: 'turn', userEvent: currentTurnUser, followingEvents: currentTurnFollowing });
+        currentTurnFollowing = [];
+      }
+      foundFirstUser = true;
+      currentTurnUser = ev;
+    } else {
+      // Non-user event
+      if (!foundFirstUser) {
+        leadingEvents.push(ev);
+      } else {
+        currentTurnFollowing.push(ev);
+      }
+    }
+  }
+
+  // Finalize remaining groups
+  if (!foundFirstUser && leadingEvents.length > 0) {
+    groups.push({ groupType: 'leading', followingEvents: leadingEvents });
+  } else if (currentTurnUser !== null) {
+    groups.push({ groupType: 'turn', userEvent: currentTurnUser, followingEvents: currentTurnFollowing });
+  }
+
+  return groups;
+}
+
 function toolIcon(ev) {
   if (ev.role === 'tool_execution') return '🔧';
   return ev.isError ? '✕' : '✓';
@@ -162,6 +213,38 @@ function ToolStep({ ev }) {
 }
 
 /**
+ * Renders a group of events (a turn or leading group).
+ * For a 'turn' group: renders user event + following events.
+ * For a 'leading' group: renders all non-user events before first user.
+ */
+function TurnGroup({ group, refIso }) {
+  const { groupType, userEvent, followingEvents } = group;
+
+  if (groupType === 'leading') {
+    return (
+      <div className="turn-group turn-group-leading">
+        {followingEvents.map((ev, idx) => (
+          <ConversationTurn key={`leading-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="turn-group turn-group-turn">
+      <ConversationTurn ev={userEvent} refIso={refIso} />
+      {followingEvents.length > 0 && (
+        <div className="turn-group-following">
+          {followingEvents.map((ev, idx) => (
+            <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * One agent's own timeline. The root (`main`) renders inline, always
  * expanded. Every nested sub-agent renders as a collapsed, enclosed,
  * colored box the user expands to reveal that agent's own rows — an
@@ -172,8 +255,9 @@ function AgentSection({ node, refIso, isRoot = false }) {
   const color = laneColor(node.lane);
   const events = node.events;
 
-  const rows = events.map((ev, idx) => (
-    <ConversationTurn key={`${ev.agent}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
+  const groups = groupEventsByTurn(events);
+  const rows = groups.map((group, idx) => (
+    <TurnGroup key={`${group.groupType}-${idx}`} group={group} refIso={refIso} />
   ));
 
   if (isRoot) {
@@ -228,3 +312,4 @@ export default function Timeline({ timeline }) {
     </div>
   );
 }
+export { groupEventsByTurn };

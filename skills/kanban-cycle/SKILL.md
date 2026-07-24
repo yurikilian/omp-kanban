@@ -1,6 +1,6 @@
 ---
 name: kanban-cycle
-description: Run a full kanban development lifecycle on an issue or specification — planning into user stories and acceptance criteria, parallel TDD implementation, two-agent review that negotiates over IRC and applies fixes, QA with e2e tests, and a pull request with release notes. Use whenever the user hands over a feature spec, requirements document, GitHub issue, bug report, or any description of work to be built and asks to implement it, build it, ship it, or run the board — even without saying "kanban". Also use when asked to plan work into tasks and then execute it, or to take work from description all the way to PR.
+description: Runs a full kanban development lifecycle on an issue or specification — planning into user stories and acceptance criteria, parallel TDD implementation, two-agent review that negotiates over IRC and applies fixes, QA with e2e tests, and a pull request with release notes. Use whenever the user hands over a feature spec, requirements document, GitHub issue, bug report, or any description of work to be built and asks to implement it, build it, ship it, or run the board — even without saying "kanban". Also use when asked to plan work into tasks and then execute it, or to take work from description all the way to PR.
 ---
 
 # Kanban Cycle
@@ -75,12 +75,16 @@ Initialize `<run_dir>/state.json`:
 {
   "run_dir": ".kanban/runs/20260723-104500-auth",
   "column": "intake",
+  "track": null,
   "started_at": "<iso8601>",
   "base_branch": "<current branch>",
   "tasks": {},
   "rework_count": 0
 }
 ```
+
+`track` is set at intake (step 1) to `"full"` or `"reduced"` and read by later
+columns to decide which agents run.
 
 ## The cycle
 
@@ -98,7 +102,25 @@ message; cutting it after the code exists costs everything spent building it.
 Present it as a choice, not a recommendation — they may have context for why the
 larger scope is right.
 
-Branch on `kind`: `spec` → step 2, `issue` → step 3.
+**Choose the track — default to the smallest cycle the work justifies.** The full
+eight-agent board is not the default for everything; running it on a small change
+costs more than the change is worth. Decide from intake's `kind` and `risk.level`:
+
+- `kind: spec` → **full track**. Go to step 2.
+- `kind: issue`, `risk.level: high` → **full track**. Skip planning (step 2), go to
+  step 3 and run every column through retrospective.
+- `kind: issue`, `risk.level: low` or `medium` → **reduced track** (default):
+  step 3 (decompose) → step 4 (dev) → step 5 (review pair) → step 7 (release).
+  Skip QA (step 6) unless an acceptance criterion needs real end-to-end wiring to
+  verify, and skip the retrospective. This is the honest default for a bounded
+  change — the review pair still gives you the write/break separation that is the
+  point of the cycle.
+
+State the track you chose and why in one line, and let the user upgrade to the
+full board if they want the extra rigor. Escalating to more agents is the explicit
+choice; defaulting to fewer is the safe one. Write the choice to `state.json` as
+`track: "full"` or `track: "reduced"` — later columns read it to decide whether QA
+runs and what release expects.
 
 ### 2. Backlog (spec only)
 
@@ -155,31 +177,50 @@ in progress without delivering any of it.
 
 ### 5. In Review — two agents over IRC
 
+Once the last layer is done and no task is blocked, set `column: "in_review"` in
+`<run_dir>/state.json` before dispatching. Nothing upstream sets it — `kb-decompose`
+leaves the board at `in_progress` and `kb-critic` advances it to `qa` — so without
+this write an interrupt here resumes into the In Progress fan-out and re-runs it.
+
 Dispatch `kb-review` and `kb-critic` **in the same `task` call** so both are live
 on the IRC bus. Give both the same channel name and each other's nick.
 
 They negotiate directly: the reviewer produces findings, the critic challenges
 them with evidence, both concede where wrong, and the critic reconciles and
-**applies the surviving fixes**. There is no separate arbiter and no round-trip
-back to a developer.
+**applies the surviving fixes**. Then the reviewer verifies those fixes over the
+same channel before the verdict is finalized — an independent check on the fixer,
+since the critic both rules and fixes. There is no separate arbiter and no
+round-trip back to a developer.
 
-Read the critic's returned verdict:
+Read the critic's returned verdict together with `reviewer_signoff`:
 
-- `approved` / `approved_with_nits` → step 6
+- `approved` / `approved_with_nits` **and** `reviewer_signoff: confirmed` → step 6
+  on the full track, or step 7 on the reduced track (see the track choice in step 1).
+- `reviewer_signoff: objected` → the independent check caught something in the
+  critic's fixes. Read `reviewer_objections` and bring them to the user before
+  advancing. If they choose to proceed, release opens the PR as a draft carrying
+  the objections rather than shipping fixes the reviewer disputed.
+- `reviewer_signoff: unavailable` → the fixes went unverified. Do not treat that as
+  approval; surface it, and if the user proceeds, release drafts the PR with the
+  gap noted.
 - `escalate` → stop and bring it to the user with the critic's summary, then
   dispatch `kb-retro`. An escalated cycle is the most informative one available;
   let them decide with the diagnosis in hand.
 
 The critic caps rework at 3. Respect that cap.
 
-**One caveat to watch.** The critic both rules on findings and applies the fixes,
-so nobody reviews its fixes. Its definition guards against this — fix only what
-survived, write the failing test first, escalate if a fix grows — but if you see
-its `fixes_applied` reaching well beyond the findings that motivated them, that
-is the failure mode showing up, and it is worth raising with the user rather than
-proceeding.
+**The caveat this guards.** The critic both rules on findings and applies the
+fixes, so its fixes need an independent set of eyes — that is what the reviewer's
+sign-off provides. It is not a full second review; if you see `fixes_applied`
+reaching well beyond the findings that motivated them even with a `confirmed`
+sign-off, raise it with the user rather than proceeding.
 
 ### 6. QA
+
+**Full track only.** On the reduced track QA was skipped at intake unless an
+acceptance criterion needs real end-to-end wiring — go straight to step 7, and
+`kb-release` opens a draft noting QA was not run. If you do want QA on a reduced
+cycle (an AC needs e2e), run it here as below.
 
 Dispatch `kb-qa`.
 
@@ -213,7 +254,10 @@ the user reads to understand progress — a state file claiming "done" for a
 blocked task converts a visible problem into an invisible one.
 
 If the user interrupts and returns, read `state.json` first and resume from
-`column` rather than restarting.
+`column` rather than restarting. Read `track` too: `kb-critic` sets `column: "qa"`
+on approval regardless of track, so on the reduced track `column: "qa"` means
+review is complete and QA is intentionally skipped — resume at step 7 (release),
+not step 6.
 
 ## Reporting
 
@@ -227,10 +271,13 @@ it happens.
 
 ## Scaling down
 
-Not everything needs eight agents. For a one-line fix, a typo, or a config
-change, the full cycle costs more than it returns. Say so, and offer to run just
-`kb-dev` plus the review pair. The user asked for a lifecycle because they want
-rigor; the honest version is telling them when the rigor exceeds the work.
+Not everything needs eight agents, which is why the reduced track (see step 1) is
+the **default** for low-risk issues rather than something offered after the fact.
+The full board is reserved for specs and high-risk issues, where a wrong call
+compounds across the whole cycle. For a one-line fix, a typo, or a config change,
+drop further still — `kb-dev` plus the review pair is enough, and say so. The user
+asked for a lifecycle because they want rigor; the honest version starts with the
+least rigor the work justifies and escalates only on evidence it is needed.
 
 ## Agents
 

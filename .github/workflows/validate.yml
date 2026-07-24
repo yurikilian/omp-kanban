@@ -20,7 +20,9 @@ jobs:
         run: ./validate.py
 
       - name: Check installer syntax
-        run: bash -n install.sh
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
 
       - name: Check manifest is valid JSON
         run: python3 -c "import json; json.load(open('package.json'))"
@@ -32,5 +34,6 @@ jobs:
           test -f .omp/agents/kb-critic.md
           test -f .omp/skills/kanban-cycle/SKILL.md
           test "$(ls .omp/agents/*.md | wc -l)" -eq 10
-          ./install.sh --project --uninstall
+          ./uninstall.sh --project
           test ! -d .omp/skills/kanban-cycle
+          test ! -f .omp/agents/kb-critic.md

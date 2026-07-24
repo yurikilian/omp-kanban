@@ -1,0 +1,169 @@
+/* ===== Unified multi-agent session timeline (tree of enclosed agent sections) ===== */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.timeline-truncation-note {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.timeline-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-row-wrap.timeline-row-error .accordion-trigger {
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+}
+
+/* Override the default nested-accordion trigger to host the multi-column
+   timeline row layout instead of a plain title string. */
+.timeline-row-wrap > .accordion {
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  border-radius: 0;
+}
+
+.timeline-row-wrap > .accordion .accordion-trigger {
+  min-height: 56px;
+  padding: 0 0.75rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.timeline-row-wrap > .accordion .accordion-title {
+  overflow: hidden;
+}
+
+.timeline-row-wrap > .accordion .accordion-content {
+  border-top: none;
+  background: var(--bg-primary);
+  padding: 0.5rem 0.75rem 0.75rem 2.25rem;
+}
+
+.timeline-badge {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* --- Nested sub-agent sections: an explicit, enclosed, expandable tree --- */
+
+.timeline-children {
+  margin: 0.375rem 0 0.375rem 2.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.timeline-nested {
+  border: 1px solid;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.timeline-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.75rem;
+}
+
+.timeline-section-header:hover {
+  background: var(--bg-surface);
+}
+
+.timeline-section-icon {
+  display: inline-flex;
+  font-size: 0.6875rem;
+  transition: transform var(--transition-fast);
+}
+
+.timeline-section-header.open .timeline-section-icon {
+  transform: rotate(90deg);
+}
+
+.timeline-section-meta {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.timeline-section-body {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.timeline-unlinked {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Prose conversation: full width of the transcript panel (not a centered narrow column). */
+.timeline-root { display: flex; flex-direction: column; gap: 1.25rem; }
+.turn-wrap { display: flex; flex-direction: column; }
+
+.turn-head {
+  display: flex; align-items: baseline; gap: 0.75rem;
+  font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.375rem;
+}
+.turn-who { font-weight: 600; }
+.turn-time { color: var(--text-tertiary); }
+.turn-tokens { margin-left: auto; font-family: 'Monaco', 'Courier New', monospace; color: var(--text-tertiary); }
+
+/* User prompt: distinct tinted block */
+.turn-user {
+  background: var(--msg-user-bg);
+  border: 1px solid var(--msg-user-border);
+  border-radius: 8px; padding: 0.875rem 1rem;
+}
+.turn-user .turn-who { color: var(--msg-user-text); }
+.turn-user-body { white-space: pre-wrap; color: var(--text-primary); line-height: 1.55; }
+
+/* Assistant: flowing prose with per-agent lane accent */
+.turn-assistant {
+  padding: 0.25rem 0 0.25rem 0.875rem;
+  border-left: 3px solid var(--lane-color, var(--border-color));
+}
+.turn-assistant .turn-body { color: var(--text-primary); line-height: 1.6; }
+
+.turn-system {
+  text-align: center; font-size: 0.75rem; color: var(--text-tertiary);
+  padding: 0.25rem 0;
+}
+
+/* Tool call: compact, de-emphasized inline step */
+.tool-step { margin: 0.5rem 0; }
+.tool-step-head { display: inline-flex; align-items: center; gap: 0.625rem; font-size: 0.8125rem; }
+.tool-step-name { font-family: 'Monaco', 'Courier New', monospace; color: var(--text-secondary); }
+.tool-step-intent { color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-step-dur { color: var(--text-tertiary); margin-left: auto; }
+
+/* Tighter turn spacing inside a nested sub-agent section */
+.timeline-section-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+}
+.timeline-section-body .turn-wrap + .turn-wrap { margin-top: 1rem; }

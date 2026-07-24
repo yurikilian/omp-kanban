@@ -9,6 +9,13 @@ runs them past two review agents that argue over IRC and apply the fixes they
 agree on, verifies the whole thing end to end, and opens a pull request with
 release notes and an AC-to-test traceability table.
 
+<p align="center">
+  <img src="docs/kanban-flow.png" alt="omp-kanban lifecycle: Intake routes to a full or reduced track through Backlog, Todo, In Progress, In Review, QA, and Done, with capped rework and QA-retry loops." width="440">
+</p>
+
+The diagram above is generated from [`docs/kanban-flow.dot`](docs/kanban-flow.dot);
+regenerate it with `dot -Tpng -Gdpi=150 docs/kanban-flow.dot -o docs/kanban-flow.png`.
+
 ## Install
 
 ```bash
@@ -24,12 +31,26 @@ instead:
 ./install.sh --project    # installs into ./.omp
 ```
 
-Other flags: `--dry-run` shows what would happen without writing, `--uninstall`
-removes everything it installed, `--help` prints usage. Re-running is safe — it
-only prompts if a file at the target differs from the copy in this repo.
+Other flags: `--dry-run` shows what would happen without writing, `--help` prints
+usage. Re-running is safe — it only prompts if a file at the target differs from
+the copy in this repo.
 
 Then open omp, run `/agents`, and confirm the ten `kb-*` agents resolved. `Ctrl+R`
 inside that view reloads from disk after any edit.
+
+### Uninstalling
+
+```bash
+./uninstall.sh              # remove from ~/.omp/agent
+./uninstall.sh --project    # remove from ./.omp
+./uninstall.sh --dry-run    # show what would be removed, change nothing
+```
+
+This removes the agents, skill, and — if you installed it — the dashboard hook
+and vendored app. It is a thin wrapper over `install.sh --uninstall` (same effect;
+one place for the removal logic). The dashboard's runtime state
+(`~/.omp/agent/dashboard/`, including `dashboard.db`) is left in place — delete it
+by hand if you want it gone.
 
 ## The board
 
@@ -73,6 +94,35 @@ checkpoint. It asks before planning, and the intake pass is cheap.
 Each run gets its own directory under `.kanban/runs/<timestamp>-<slug>/`, so
 concurrent invocations never collide. Add `.kanban/` to your `.gitignore`.
 
+## Dashboard (optional)
+
+A vendored web dashboard ships alongside the board. It reads
+`~/.omp/agent/sessions/` and shows session timelines, tool calls, KPI cards
+(tokens, cost, message counts), and markdown plans — read-only, no session
+creation. Install it with:
+
+```bash
+./install.sh --with-dashboard
+```
+
+That copies the app in and builds it (`npm install` + `npm run build`; the server
+has a native `better-sqlite3` dependency, which is why it is opt-in rather than
+part of the light default install).
+
+Once installed, a `session_start` hook launches it automatically — **once**. It is
+a cross-session singleton: the first omp session starts a single dashboard daemon
+on a random free port and prints the URL into the session; every later session
+reuses that same one instead of opening another. The daemon outlives the session
+that started it.
+
+- The running instance is recorded in `~/.omp/agent/dashboard/state.json`.
+- Stop it by killing the `pid` in that file.
+- `OMP_KANBAN_DASHBOARD_OPEN=1` also opens a browser tab on fresh start.
+- `PORT` and `DASHBOARD_DB` override the port and SQLite location.
+
+Without `--with-dashboard`, nothing dashboard-related is installed and no hook
+runs — the agents and skill behave exactly as before.
+
 ## How the review works
 
 Most of the design is conventional. The review column is not, so it is worth
@@ -83,18 +133,22 @@ independent view — deliberately before reading those findings, because reading
 them first anchors it — then challenges the reviewer's work over IRC. They argue
 for at most two rounds, each conceding where the other is right. The critic then
 reconciles the dispute into one verdict and **applies the surviving fixes
-itself**.
+itself**. Finally the reviewer verifies those fixes in one closing round —
+checking each resolves its finding and did not reach past it — and the critic
+records the result in `reviewer_signoff`.
 
-That last part is the tradeoff. Collapsing arbitration and fixing into one agent
-removes a round-trip and a whole agent's worth of tokens, but it means nobody
-reviews the critic's fixes. `kb-critic` has guards against this — fix only what
-survived reconciliation, write the failing test first, escalate rather than let a
-fix grow — and the skill tells the orchestrator to flag it if `fixes_applied`
-starts reaching well past the findings that motivated them.
+That sign-off is what keeps the collapsed design honest. Folding arbitration and
+fixing into one agent removes a round-trip and a whole agent's worth of tokens,
+but it would otherwise mean nobody reviews the critic's fixes. The reviewer's
+independent check closes that gap without a third agent, restoring the separation
+an evaluator-optimizer loop needs. `kb-critic` still carries its own guards — fix
+only what survived reconciliation, write the failing test first, escalate rather
+than let a fix grow — and the skill gates on `reviewer_signoff` and flags
+`fixes_applied` reaching well past the findings that motivated it.
 
-It is a real trade, not a free win. If you would rather have the independent
-arbiter back, split `kb-critic` into a ruling agent and a fixing agent; the
-verdict schema already carries everything a separate fixer would need.
+The sign-off is one round, not a full second review. If you would rather have a
+fully independent arbiter, split `kb-critic` into a ruling agent and a fixing
+agent; the verdict schema already carries everything a separate fixer would need.
 
 ## Lean principles, as mechanism
 
@@ -160,13 +214,17 @@ omp's plugin manager once published.
 
 ## Cost
 
-This runs eight agents on a full spec cycle. That is deliberate — the separation
-between the agent that writes code and the agents that try to break it is where
-the value is — but it is not cheap, and on a small change it costs more than the
-change is worth.
+The full board runs eight agents on a spec cycle. That is deliberate — the
+separation between the agent that writes code and the agents that try to break it
+is where the value is — but it is not cheap, and on a small change it costs more
+than the change is worth.
 
-The skill knows this and will offer to run a reduced cycle (`kb-dev` plus the
-review pair) when the work does not justify the full board. Take it up on that.
+So the full board is not the default for everything. The skill picks the track at
+intake: specs and high-risk issues get the full board; a low-risk issue defaults
+to a **reduced track** (decompose → dev → review pair → release, QA only when an
+acceptance criterion needs real end-to-end wiring, no retrospective). Escalating to
+the full board is an explicit choice; defaulting to fewer agents is the safe one.
+For a one-line fix, it drops further still to `kb-dev` plus the review pair.
 
 `kb-forensics` audits where your tokens actually went. It discovers the session
 JSONL schema rather than assuming it, reports honestly when something is not

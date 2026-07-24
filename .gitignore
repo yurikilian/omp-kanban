@@ -1,0 +1,11 @@
+# omp-kanban
+# Installer output from `./install.sh --project` (also the CI smoke test).
+.omp/
+# Per-run cycle artifacts written by the kanban-cycle skill.
+.kanban/
+# Vendored dashboard build-time artifacts — produced by `./install.sh --with-dashboard`.
+dashboard/**/node_modules/
+dashboard/web/dist/
+# Stray OS/editor files.
+.DS_Store
+*.log

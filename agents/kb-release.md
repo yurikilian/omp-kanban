@@ -37,12 +37,28 @@ Your assignment gives you the `run_dir`.
 
 ## Preconditions
 
-`<run_dir>/qa-report.json` has `verdict: "pass"` and
-`<run_dir>/review/verdict.json` is an approval. If either fails, return
-`status: "blocked"` with the reason — do not open a PR for unverified work.
+`<run_dir>/review/verdict.json` must be an approval (`approved` or
+`approved_with_nits`). If it is not, return `status: "blocked"` — do not open a PR
+for work review did not clear.
 
-If `e2e_skipped` is true you may proceed, but the PR body must carry the gap
-prominently and the PR opens as a draft.
+Check `reviewer_signoff` on that verdict. `confirmed` proceeds normally. Anything
+else — `objected`, `unavailable`, or absent — means the critic's fixes were not
+independently verified: still proceed, but open the PR as a **draft** and carry a
+prominent note that the fixes went unverified (with the `reviewer_objections` if
+any). A draft is the honest state for unverified work; a silent normal PR is not.
+
+QA depends on the track in `<run_dir>/state.json`. Only `track: "reduced"` waives
+the QA report; treat any other value, or a missing one, as the full track:
+
+- `track: "reduced"` → QA was deliberately skipped at intake. Proceed **without** a
+  QA report, but open the PR as a **draft** and carry a prominent note that
+  integration/e2e verification was not run because the reduced track was chosen.
+- `track: "full"` (or absent/unknown) → `<run_dir>/qa-report.json` must exist with
+  `verdict: "pass"`. If it is missing or failed, return `status: "blocked"` — do
+  not open a PR for work the full track left unverified.
+
+If `e2e_skipped` is true (QA ran but skipped e2e), you may also proceed, with the
+gap carried prominently and the PR opened as a draft.
 
 ## Procedure
 

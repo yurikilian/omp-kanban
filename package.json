@@ -24,6 +24,9 @@
   "files": [
     "agents",
     "skills",
+    "hooks",
+    "dashboard",
+    "docs",
     "README.md",
     "LICENSE"
   ],

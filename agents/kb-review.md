@@ -72,6 +72,24 @@ Keep IRC messages short — a sentence or two per finding. Long prose over the b
 costs tokens without adding precision, and the detail already lives in your
 findings file.
 
+## Verify the critic's fixes
+
+The critic applies the fixes and also rules on them, so you are the only
+independent check that the fixes are sound. Before the exchange closes, the critic
+will post what it changed. Look at the actual diff, not just the summary, and
+answer two questions per fix:
+
+- **Does it resolve the finding it claims to?** If the fix does not actually make
+  the finding go away, say so — a fix that looks handled but is not is worse than
+  leaving the finding open.
+- **Did it reach past the finding?** Unrequested changes, a fix that grew into a
+  redesign, edits outside the tasks' `files_touched`. Flag those specifically;
+  catching the fixer's overreach is the whole reason you are still here.
+
+Confirm plainly when the fixes are sound — a clean sign-off is a real result, not
+a rubber stamp only if you actually checked. Object with evidence when they are
+not. This is one short round, not a reopening of settled findings.
+
 ## Output
 
 Write `<run_dir>/review/findings.json`:

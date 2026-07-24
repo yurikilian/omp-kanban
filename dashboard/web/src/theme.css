@@ -1,0 +1,112 @@
+/* ===== Theme System ===== */
+
+:root {
+  /* Light Mode - Default */
+  --bg-primary: #f5f5f5;
+  --bg-surface: #ffffff;
+  --bg-elevated: #fafafa;
+  --border-color: #ddd;
+  --text-primary: #222222;
+  --text-secondary: #888888;
+  --text-tertiary: #aaaaaa;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
+  
+  /* Message Colors - Light */
+  --msg-user-bg: #e8f4ff;
+  --msg-user-border: #0066cc;
+  --msg-user-text: #0066cc;
+  --msg-user-icon: 👤;
+  
+  --msg-assistant-bg: #f0f0f0;
+  --msg-assistant-border: #666666;
+  --msg-assistant-text: #666666;
+  --msg-assistant-icon: 🤖;
+  
+  --msg-system-bg: #f5f5f5;
+  --msg-system-border: #888888;
+  --msg-system-text: #666666;
+  --msg-system-icon: ℹ;
+  
+  --msg-tool-bg: #fff3cd;
+  --msg-tool-border: #ff9800;
+  --msg-tool-text: #ff9800;
+  --msg-tool-icon: 🔧;
+  
+  --msg-result-bg: #d4edda;
+  --msg-result-border: #28a745;
+  --msg-result-text: #28a745;
+  --msg-result-icon: ✓;
+  
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 300ms ease-in-out;
+
+  /* Error colors */
+  --error-text: #d32f2f;
+  --error-border: #d32f2f;
+  --error-bg: #fdecea;
+
+  /* Status dot colors (Claude-Desktop-style live status) */
+  --status-working: #22b8cf;
+  --status-idle: #40c057;
+  --status-ended: #868e96;
+  --status-plan: #845ef7;
+}
+
+/* Dark Mode */
+[data-theme="dark"] {
+  --bg-primary: #0f0f0f;
+  --bg-surface: #1a1a1a;
+  --bg-elevated: #242424;
+  --border-color: #333333;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a8a8a8;
+  --text-tertiary: #787878;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  
+  /* Message Colors - Dark */
+  --msg-user-bg: #1e3a5f;
+  --msg-user-border: #4da6ff;
+  --msg-user-text: #4da6ff;
+  
+  --msg-assistant-bg: #2a2a2a;
+  --msg-assistant-border: #808080;
+  --msg-assistant-text: #b0b0b0;
+  
+  --msg-system-bg: #242424;
+  --msg-system-border: #555555;
+  --msg-system-text: #888888;
+  
+  --msg-tool-bg: #3d3300;
+  --msg-tool-border: #ffb84d;
+  --msg-tool-text: #ffb84d;
+  
+  --msg-result-bg: #1a3a1a;
+  --msg-result-border: #4db84d;
+  --msg-result-text: #4db84d;
+
+  /* Error colors - Dark */
+  --error-text: #f77066;
+  --error-border: #f77066;
+  --error-bg: #3a1a1a;
+
+  /* Status dot colors - Dark (same hues, already tuned for both modes) */
+  --status-working: #22b8cf;
+  --status-idle: #40c057;
+  --status-ended: #868e96;
+  --status-plan: #845ef7;
+}
+
+/* Global Styles with Theme Support */
+* {
+  transition: background-color var(--transition-fast), 
+              color var(--transition-fast),
+              border-color var(--transition-fast);
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}

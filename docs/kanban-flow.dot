@@ -1,0 +1,62 @@
+// omp-kanban lifecycle flow. Render:
+//   dot -Tpng -Gdpi=150 docs/kanban-flow.dot -o docs/kanban-flow.png
+digraph kanban {
+  rankdir=TB;
+  bgcolor="white";
+  labelloc="t";
+  label=<<b>omp-kanban — kanban development lifecycle</b>>;
+  fontname="Helvetica"; fontsize=17;
+  node [shape=box, style="rounded,filled", fontname="Helvetica",
+        fontsize=11, margin="0.18,0.09", color="#00000022"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  input [label="Issue  /  Spec", shape=note, fillcolor="#ECECEC"];
+  intake [label=<<b>Intake</b><br/><font point-size="9">kb-intake · smol</font><br/><font point-size="9">classify kind + risk, scope, waste</font>>, fillcolor="#B7D9B1"];
+  track  [label=<<b>Track?</b>>, shape=diamond, fillcolor="#FFFFFF", height=0.9];
+
+  backlog [label=<<b>Backlog</b><br/><font point-size="9">kb-planner · slow</font><br/><font point-size="9">epics · stories · acceptance criteria</font>>, fillcolor="#F4C77B"];
+  todo [label=<<b>Todo</b><br/><font point-size="9">kb-decompose · slow</font><br/><font point-size="9">tasks · layers · file claims</font>>, fillcolor="#F4C77B"];
+  dev [label=<<b>In Progress</b><br/><font point-size="9">kb-dev · default</font><br/><font point-size="9">parallel TDD per layer</font>>, fillcolor="#9EC5F0"];
+  review [label=<<b>In Review</b><br/><font point-size="9">kb-review (slow) + kb-critic (default) · over IRC</font><br/><font point-size="9">critic applies fixes → reviewer verifies (reviewer_signoff)</font>>, fillcolor="#9EC5F0"];
+  qa [label=<<b>QA</b><br/><font point-size="9">kb-qa · default</font><br/><font point-size="9">full suite · integration · e2e</font>>, fillcolor="#9EC5F0"];
+  done [label=<<b>Done</b><br/><font point-size="9">kb-release · smol</font><br/><font point-size="9">merge · release notes · PR</font>>, fillcolor="#B7D9B1"];
+  retro [label=<<b>Retrospective</b><br/><font point-size="9">kb-retro · smol</font><br/><font point-size="9">process waste audit</font>>, fillcolor="#B7D9B1"];
+
+  pr [label="Pull Request", shape=note, fillcolor="#ECECEC"];
+  forensics [label=<<b>kb-forensics</b> · smol<br/><font point-size="9">cost audit — off-board, on demand</font>>, fillcolor="#E4E4E4", style="rounded,filled,dashed"];
+
+  input -> intake;
+  intake -> track;
+
+  track -> backlog [label=" spec /\l high-risk issue\l"];
+  backlog -> todo;
+  track -> todo [label=" low-risk issue\l (reduced track)\l", style=dashed];
+
+  todo -> dev;
+  dev -> review;
+
+  review -> review [label="rework ≤ 3", style=dashed, color="#B0662A", fontcolor="#B0662A"];
+  review -> qa [label=" full: approved "];
+  review -> done [label=" reduced: approved\l (draft if unverified)\l", style=dashed];
+
+  qa -> review [label="fail ≤ 2", style=dashed, color="#B0662A", fontcolor="#B0662A"];
+  qa -> done [label=" pass "];
+
+  done -> retro [label=" full track "];
+  done -> pr;
+
+  legend [shape=none, margin=0, label=<
+    <table border="1" color="#CCCCCC" cellborder="0" cellspacing="4" cellpadding="3">
+      <tr><td colspan="2" align="left"><b>Legend</b></td></tr>
+      <tr><td bgcolor="#B7D9B1" width="26"> </td><td align="left">smol · cheap, mechanical</td></tr>
+      <tr><td bgcolor="#9EC5F0" width="26"> </td><td align="left">default · normal work</td></tr>
+      <tr><td bgcolor="#F4C77B" width="26"> </td><td align="left">slow · deep reasoning</td></tr>
+      <tr><td align="center"><font color="#B0662A">– –</font></td><td align="left">rework / retry loops (capped)</td></tr>
+      <tr><td align="center">– –</td><td align="left">reduced track (skips Backlog, QA, Retro)</td></tr>
+      <tr><td colspan="2" align="left">User checkpoints: Intake, Backlog, escalation</td></tr>
+    </table>
+  >];
+
+  pr -> legend [style=invis];
+  { rank=sink; legend; }
+}

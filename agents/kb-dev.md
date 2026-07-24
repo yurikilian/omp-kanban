@@ -7,7 +7,7 @@ spawns: []
 thinkingLevel: medium
 output:
   type: object
-  required: [task_id, status, files_changed, tests_added, suite_result]
+  required: [task_id, status, files_changed, tests_added]
   properties:
     task_id: { type: string }
     status: { type: string, enum: [done, blocked] }

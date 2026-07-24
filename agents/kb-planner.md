@@ -1,8 +1,13 @@
 ---
 name: kb-planner
 description: Splits a specification into epics, user stories, and testable acceptance criteria, sequenced by value with deferred decisions recorded. Runs only for spec-kind input; skipped for single issues.
-tools: read, search, find, write
-model: slow
+tools:
+  - read
+  - grep
+  - glob
+  - write
+model:
+  - "@slow"
 spawns: []
 thinkingLevel: high
 ---

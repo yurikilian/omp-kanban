@@ -39,7 +39,7 @@ else
 fi
 
 AGENT_DIR="$ROOT/agents"
-SKILL_DIR="$ROOT/skills/kanban-cycle"
+SKILLS_DIR="$ROOT/skills"
 HOOK_DIR="$ROOT/hooks/pre"
 DASHBOARD_DIR="$ROOT/dashboard"
 
@@ -47,6 +47,10 @@ say()  { printf '%s\n' "$*"; }
 run()  { if [ "$DRY" -eq 1 ]; then say "  would: $*"; else "$@"; fi; }
 
 AGENTS=$(cd "$SRC/agents" && ls kb-*.md)
+# Every directory under skills/ that holds a SKILL.md — discovered, not hardcoded.
+SKILLS=$(cd "$SRC/skills" && for d in */; do [ -f "$d/SKILL.md" ] && printf '%s\n' "${d%/}"; done)
+AGENT_COUNT=$(printf '%s\n' "$AGENTS" | grep -c .)
+SKILL_COUNT=$(printf '%s\n' "$SKILLS" | grep -c .)
 
 # ---------------------------------------------------------------- uninstall
 if [ "$UNINSTALL" -eq 1 ]; then
@@ -54,10 +58,12 @@ if [ "$UNINSTALL" -eq 1 ]; then
   for f in $AGENTS; do
     [ -e "$AGENT_DIR/$f" ] && run rm -f "$AGENT_DIR/$f" && say "  removed $f"
   done
-  if [ -d "$SKILL_DIR" ]; then
-    run rm -rf "$SKILL_DIR"
-    say "  removed skills/kanban-cycle"
-  fi
+  for s in $SKILLS; do
+    if [ -d "$SKILLS_DIR/$s" ]; then
+      run rm -rf "$SKILLS_DIR/$s"
+      say "  removed skills/$s"
+    fi
+  done
   if [ -e "$HOOK_DIR/kb-dashboard.ts" ]; then
     run rm -f "$HOOK_DIR/kb-dashboard.ts"
     say "  removed hooks/pre/kb-dashboard.ts"
@@ -104,15 +110,18 @@ if [ -n "$COLLISIONS" ]; then
   fi
 fi
 
-run mkdir -p "$AGENT_DIR" "$SKILL_DIR"
+run mkdir -p "$AGENT_DIR" "$SKILLS_DIR"
 
 for f in $AGENTS; do
   run cp "$SRC/agents/$f" "$AGENT_DIR/$f"
   say "  agents/$f"
 done
 
-run cp "$SRC/skills/kanban-cycle/SKILL.md" "$SKILL_DIR/SKILL.md"
-say "  skills/kanban-cycle/SKILL.md"
+for s in $SKILLS; do
+  run mkdir -p "$SKILLS_DIR/$s"
+  run cp "$SRC/skills/$s/SKILL.md" "$SKILLS_DIR/$s/SKILL.md"
+  say "  skills/$s/SKILL.md"
+done
 
 # ------------------------------------------------------------- dashboard (opt-in)
 if [ "$DASHBOARD" -eq 1 ]; then
@@ -143,15 +152,15 @@ fi
 
 say ""
 if [ "$DASHBOARD" -eq 1 ]; then
-  say "Installed 10 agents, 1 skill, and the session-start dashboard hook."
+  say "Installed $AGENT_COUNT agents, $SKILL_COUNT skills, and the session-start dashboard hook."
 else
-  say "Installed 10 agents and 1 skill."
+  say "Installed $AGENT_COUNT agents and $SKILL_COUNT skills."
 fi
 say ""
 say "Next:"
 say "  1. omp -p '/agents'     — confirm the 10 kb-* agents resolved,"
 say "                            and that they loaded from $AGENT_DIR."
-say "  2. omp -p '/extensions' — confirm the kanban-cycle skill loaded."
+say "  2. omp -p '/extensions' — confirm the kanban-cycle and cost-forensics skills loaded."
 say "  3. Ctrl+R inside /agents reloads from disk after an edit."
 say "  4. Add .kanban/ to your .gitignore — cycle artifacts live there."
 say ""

@@ -33,7 +33,10 @@ jobs:
           ./install.sh --project
           test -f .omp/agents/kb-critic.md
           test -f .omp/skills/kanban-cycle/SKILL.md
+          test -f .omp/skills/cost-forensics/SKILL.md
           test "$(ls .omp/agents/*.md | wc -l)" -eq 10
+          test "$(ls -d .omp/skills/*/ | wc -l)" -eq 2
           ./uninstall.sh --project
           test ! -d .omp/skills/kanban-cycle
+          test ! -d .omp/skills/cost-forensics
           test ! -f .omp/agents/kb-critic.md

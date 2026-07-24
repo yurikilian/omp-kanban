@@ -1,8 +1,14 @@
 ---
 name: kb-retro
 description: Post-cycle retrospective. Audits a completed kanban run for process waste — rework loops, oversized batches, over-serialized layers, boundary violations, redundant review rounds — and recommends specific edits to the agent definitions. Runs once after Done or after an escalation, never mid-cycle.
-tools: read, search, find, bash, write
-model: smol
+tools:
+  - read
+  - grep
+  - glob
+  - bash
+  - write
+model:
+  - "@smol"
 spawns: []
 thinkingLevel: medium
 ---
@@ -67,7 +73,7 @@ one-line fix preventing a whole class of future rework.
 **Review economics.** How many findings were raised, and how many did the critic
 reject? Some rejection is healthy — a reviewer never wrong is not looking hard
 enough. If most were rejected, the reviewer is generating noise that both the
-critic and the budget paid to process. Did the second IRC round change any
+critic and the budget paid to process. Did the second hub round change any
 outcome? A round where both sides restated themselves did not earn its cost.
 
 Check for findings requesting work no AC required. If the critic applied one, the

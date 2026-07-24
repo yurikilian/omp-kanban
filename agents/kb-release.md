@@ -1,33 +1,86 @@
 ---
 name: kb-release
 description: Merges task branches into a feature branch, re-runs the suite on the merged result, generates release notes from stories and acceptance criteria, and opens a pull request with AC-to-test traceability. Final agent in the board.
-tools: read, write, search, find, bash, github
-model: smol
+tools:
+  - read
+  - write
+  - grep
+  - glob
+  - bash
+  - yield
+model:
+  - "@smol"
 spawns: []
 thinkingLevel: medium
 output:
-  type: object
-  required: [status, branch]
   properties:
-    status: { type: string, enum: [pr_opened, blocked] }
-    pr_url: { type: ["string", "null"] }
-    branch: { type: string }
-    draft: { type: boolean }
-    merged_tasks: { type: array, items: { type: string } }
+    status:
+      metadata:
+        description: Whether a PR was opened or the release was blocked
+      enum:
+        - pr_opened
+        - blocked
+    branch:
+      metadata:
+        description: The feature branch the work was merged onto
+      type: string
+  optionalProperties:
+    pr_url:
+      metadata:
+        description: URL of the opened PR; present only when status is pr_opened
+      type: string
+    draft:
+      metadata:
+        description: Whether the PR was opened as a draft because something was flagged
+      type: boolean
+    merged_tasks:
+      metadata:
+        description: Task IDs merged into the feature branch
+      elements:
+        type: string
     conflicts:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Merge conflicts encountered, reported rather than resolved
+      elements:
         properties:
-          file: { type: string }
-          tasks: { type: array, items: { type: string } }
+          file:
+            metadata:
+              description: File in conflict
+            type: string
+          tasks:
+            metadata:
+              description: Task branches that collided on it
+            elements:
+              type: string
     flow_metrics:
-      type: object
+      metadata:
+        description: Diagnostic flow measurements for the cycle, not a grade
       properties:
-        tasks_completed: { type: integer }
-        tasks_reworked: { type: integer }
-        rework_loops: { type: integer }
-        defects_by_column: { type: object }
+        tasks_completed:
+          metadata:
+            description: Tasks that reached Done
+          type: number
+        tasks_reworked:
+          metadata:
+            description: Tasks that went through at least one rework loop
+          type: number
+        rework_loops:
+          metadata:
+            description: Total rework loops across the cycle
+          type: number
+        defects_by_column:
+          metadata:
+            description: Defect counts attributed to the column where they entered
+          elements:
+            properties:
+              column:
+                metadata:
+                  description: The column
+                type: string
+              count:
+                metadata:
+                  description: Defects entering there
+                type: number
 ---
 
 You are the release agent for the Done column. You turn verified work into a pull
@@ -72,7 +125,7 @@ gap carried prominently and the PR opened as a draft.
    each pass and still break together, and this is the only point where that
    surfaces. A failure here goes back for rework.
 4. Generate release notes.
-5. Open the PR with the `github` tool.
+5. Open the PR with `gh` (`gh pr create`) via `bash`.
 
 ## Release notes
 

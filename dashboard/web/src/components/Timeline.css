@@ -236,3 +236,57 @@
   flex-direction: column;
   margin-top: 0.5rem;
 }
+
+/* ===== Role-based semantic token coloring for turns ===== */
+
+/* User messages: primary blue */
+.turn-role-user {
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-left: 3px solid var(--primary);
+}
+.turn-role-user .turn-head {
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* Assistant messages: neutral gray */
+.turn-role-assistant {
+  background-color: color-mix(in srgb, var(--neutral) 8%, transparent);
+  border-left: 3px solid var(--neutral);
+}
+.turn-role-assistant .turn-head {
+  border-bottom: 1px solid color-mix(in srgb, var(--neutral) 20%, transparent);
+}
+
+/* System messages: subtle tertiary text */
+.turn-role-system {
+  background-color: color-mix(in srgb, var(--text-tertiary) 5%, transparent);
+  border-left: 3px solid var(--text-tertiary);
+  color: var(--text-tertiary);
+}
+
+/* Tool calls: warning orange */
+.turn-role-tool {
+  background-color: color-mix(in srgb, var(--warning) 8%, transparent);
+  border-left: 3px solid var(--warning);
+}
+.turn-role-tool .tool-step-head {
+  color: var(--warning);
+}
+
+/* Tool results: success green */
+.turn-role-tool-result {
+  background-color: color-mix(in srgb, var(--success) 8%, transparent);
+  border-left: 3px solid var(--success);
+}
+.turn-role-tool-result .tool-step-head {
+  color: var(--success);
+}
+
+/* Error tool steps: danger red, overrides success color */
+.turn-role-error {
+  background-color: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-left: 3px solid var(--danger);
+}
+.turn-role-error .tool-step-head {
+  color: var(--danger);
+}

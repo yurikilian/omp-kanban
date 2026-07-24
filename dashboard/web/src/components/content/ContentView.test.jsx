@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { detectView, extLang } from './ContentView';
+import React from 'react';
+import fs from 'fs';
+import path from 'path';
+import { render } from '@testing-library/react';
+import ContentView, { detectView, extLang } from './ContentView';
+import { ThemeProvider } from '../../context/ThemeContext';
 
 describe('detectView', () => {
   it('detects a code file snapshot and strips numbered-line prefixes', () => {
@@ -75,5 +80,105 @@ describe('extLang', () => {
   it('falls back to text for unknown extensions', () => {
     expect(extLang('a.xyz')).toBe('text');
     expect(extLang('')).toBe('text');
+  });
+});
+
+// ===== Single scroll region (E2-S1) =====
+//
+// The session detail owns exactly one vertical scroller: `.session-detail-messages`.
+// Content blocks used to cap themselves at `max-height: 480px; overflow: auto`,
+// which squeezed a long plan into a short box with its own scrollbar nested
+// inside that region. These guard both the stylesheet fact and the rendered
+// cascade (vitest runs with `css: true`, so getComputedStyle resolves it).
+
+const CSS_SOURCE = fs
+  .readFileSync(path.join(__dirname, './content.css'), 'utf-8')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
+
+/** Split a stylesheet into [selectorList, declarations] pairs. */
+function cssRules(source) {
+  return [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+    selector: selector.trim(),
+    declarations: body
+      .split(';')
+      .map(d => d.trim())
+      .filter(Boolean)
+  }));
+}
+
+/** Declarations of every rule whose selector list contains `selector`. */
+function declarationsFor(selector) {
+  return cssRules(CSS_SOURCE)
+    .filter(rule => rule.selector.split(',').some(s => s.trim() === selector))
+    .flatMap(rule => rule.declarations);
+}
+
+const SCROLLS = /^overflow(-y)?\s*:\s*(auto|scroll)$/;
+
+const CAPPED_BLOCKS = ['.markdown-body', '.text-view-body', '.term', '.code-view > pre'];
+
+describe('content.css scroll containment (E2-S1-AC2)', () => {
+  it.each(CAPPED_BLOCKS)('%s renders at full height with no vertical scroll cap', (selector) => {
+    const declarations = declarationsFor(selector);
+    expect(declarations.length).toBeGreaterThan(0);
+    expect(declarations.filter(d => /^max-height\s*:/.test(d))).toEqual([]);
+    expect(declarations.filter(d => SCROLLS.test(d.replace(/\s*!important$/, '')))).toEqual([]);
+  });
+
+  it('declares no vertical scroll container anywhere in the content subtree (E2-S1-AC1)', () => {
+    const offenders = cssRules(CSS_SOURCE)
+      .flatMap(rule => rule.declarations
+        .filter(d => SCROLLS.test(d.replace(/\s*!important$/, '')))
+        .map(d => `${rule.selector} { ${d} }`));
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps horizontal overflow on code blocks, which is legitimate', () => {
+    expect(declarationsFor('.markdown-body pre')).toContain('overflow-x: auto');
+  });
+});
+
+describe('ContentView rendered scroll containment (E2-S1-AC1, E2-S1-AC3)', () => {
+  const LONG_LINES = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n');
+
+  const CASES = {
+    markdown: ['read', `## Plan\n\n${LONG_LINES}`],
+    code: ['read', `[plan.ts#1A2B]\n${LONG_LINES}`],
+    terminal: ['bash', LONG_LINES],
+    text: ['read', LONG_LINES]
+  };
+
+  it.each(Object.entries(CASES))('%s content is not height-capped', (_kind, [toolName, content]) => {
+    const { container } = render(
+      <ThemeProvider>
+        <ContentView toolName={toolName} content={content} />
+      </ThemeProvider>
+    );
+    const capped = [...container.querySelectorAll('*')].filter((el) => {
+      const { maxHeight } = getComputedStyle(el);
+      return maxHeight && maxHeight !== 'none';
+    });
+    expect(capped.map(el => el.className)).toEqual([]);
+  });
+
+  it.each(Object.entries(CASES))('%s content declares no nested vertical scroller', (_kind, [toolName, content]) => {
+    const { container } = render(
+      <ThemeProvider>
+        <ContentView toolName={toolName} content={content} />
+      </ThemeProvider>
+    );
+    const scrollable = v => v === 'auto' || v === 'scroll';
+    const scrollers = [...container.querySelectorAll('*')].filter((el) => {
+      // react-syntax-highlighter puts `overflow: auto` inline on its own <pre>.
+      // That is third-party and outside this task's reach; it cannot produce a
+      // scrollbar because nothing caps the height (asserted above). Everything
+      // our own stylesheet governs must not scroll vertically at all.
+      if ([el.style.overflow, el.style.overflowY].some(scrollable)) return false;
+      const style = getComputedStyle(el);
+      // jsdom does not expand the `overflow` shorthand into `overflowY`, so both
+      // properties have to be read for the assertion to have any teeth.
+      return [style.overflow, style.overflowY].some(scrollable);
+    });
+    expect(scrollers.map(el => el.className || el.tagName)).toEqual([]);
   });
 });

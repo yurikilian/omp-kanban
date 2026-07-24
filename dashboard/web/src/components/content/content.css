@@ -78,8 +78,6 @@
   font-size: 0.8125rem;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 480px;
-  overflow: auto;
   color: var(--text-primary);
 }
 
@@ -94,8 +92,6 @@
 /* Markdown */
 .markdown-body {
   padding: 0.75rem 1rem;
-  max-height: 480px;
-  overflow: auto;
   color: var(--text-primary);
   line-height: 1.5;
 }
@@ -124,8 +120,9 @@
 
 /* Code view (syntax highlighter host) */
 .code-view > pre {
-  max-height: 480px;
-  overflow: auto !important;
+  /* Horizontal scrolling on long code lines is legitimate; vertical is not —
+     the detail area scrolls as one region, so code renders at full height. */
+  overflow-x: auto !important;
   font-size: 0.8125rem !important;
 }
 

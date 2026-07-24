@@ -45,6 +45,10 @@ function isToolRole(role) {
   return role === 'tool' || role === 'tool_result' || role === 'tool_execution';
 }
 
+function isToolStep(ev) {
+  return isToolRole(ev.role);
+}
+
 function isUserRole(role) {
   return role === 'user';
 }
@@ -219,6 +223,11 @@ function ToolStep({ ev }) {
  */
 function TurnGroup({ group, refIso }) {
   const { groupType, userEvent, followingEvents } = group;
+  const [isToolBlockExpanded, setIsToolBlockExpanded] = useState(false);
+
+  // Separate tool steps from other events
+  const toolSteps = followingEvents.filter(isToolStep);
+  const nonToolEvents = followingEvents.filter(ev => !isToolStep(ev));
 
   if (groupType === 'leading') {
     return (
@@ -233,11 +242,30 @@ function TurnGroup({ group, refIso }) {
   return (
     <div className="turn-group turn-group-turn">
       <ConversationTurn ev={userEvent} refIso={refIso} />
-      {followingEvents.length > 0 && (
+      {nonToolEvents.length > 0 && (
         <div className="turn-group-following">
-          {followingEvents.map((ev, idx) => (
+          {nonToolEvents.map((ev, idx) => (
             <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
           ))}
+        </div>
+      )}
+      {toolSteps.length > 0 && (
+        <div className="tool-block">
+          <button
+            type="button"
+            className="tool-block-toggle"
+            onClick={() => setIsToolBlockExpanded(s => !s)}
+            aria-expanded={isToolBlockExpanded}
+          >
+            Tool calls ({toolSteps.length})
+          </button>
+          {isToolBlockExpanded && (
+            <div className="tool-block-content">
+              {toolSteps.map((ev, idx) => (
+                <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -309,3 +309,39 @@ describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
     });
   });
 });
+
+describe('Narrow Viewport Fallback to Icon-Only (E2-S3)', () => {
+  describe('E2-S3-AC1: Below 1024px breakpoint, sidebar is icon-only regardless of expanded pref', () => {
+    it('ActivityRail.css defines a @media (max-width: 1024px) rule that forces icon-only', () => {
+      const cssPath = path.join(__dirname, './ActivityRail.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+      
+      // Verify @media (max-width: 1024px) rule exists
+      expect(css).toMatch(/@media\s*\(\s*max-width\s*:\s*1024px\s*\)/);
+      
+      // Verify the media query overrides width to the collapsed width (80px)
+      expect(css).toMatch(/@media[\s\S]*?\.activity-rail[\s\S]*?\{[\s\S]*?width\s*:\s*80px/);
+    });
+
+    it('below 1024px, activity-rail-label is hidden via CSS display:none', () => {
+      const cssPath = path.join(__dirname, './ActivityRail.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+      
+      // Verify the media query hides labels by setting display: none
+      expect(css).toMatch(/@media[\s\S]*?\.activity-rail-label[\s\S]*?\{[\s\S]*?display\s*:\s*none/);
+    });
+  });
+
+  describe('E2-S3-AC2: Above 1024px, stored expanded/collapsed preference is honored (verified on running dashboard)', () => {
+    it('media query only applies to max-width 1024px, so above breakpoint normal CSS rules apply', () => {
+      const cssPath = path.join(__dirname, './ActivityRail.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+      
+      // Verify .activity-rail.collapsed rule exists (for manual collapse above breakpoint)
+      expect(css).toMatch(/\.activity-rail\.collapsed\s*\{[\s\S]*?width\s*:\s*80px/);
+      
+      // Verify .activity-rail default width is 240px (expanded state)
+      expect(css).toMatch(/^\.activity-rail\s*\{[\s\S]*?width\s*:\s*240px/m);
+    });
+  });
+});

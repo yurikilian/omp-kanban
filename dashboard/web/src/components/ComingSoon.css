@@ -18,7 +18,11 @@
   justify-content: center;
 }
 
-.coming-soon-icon svg {
+/* ComingSoon.jsx renders either <span class="coming-soon-icon">emoji</span> or
+   a heroicon with the class applied directly to the <svg>. Cover both — a
+   descendant-only selector leaves the svg case unsized and it stretches. */
+.coming-soon-icon svg,
+svg.coming-soon-icon {
   width: 2.5rem;
   height: 2.5rem;
   stroke-width: 1.5;

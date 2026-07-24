@@ -131,6 +131,18 @@ if [ "$DASHBOARD" -eq 1 ]; then
   run cp "$SRC/hooks/pre/kb-dashboard.ts" "$HOOK_DIR/kb-dashboard.ts"
   say "  hooks/pre/kb-dashboard.ts"
 
+  # The dashboard daemon is a cross-session singleton: the hook reuses whatever
+  # `state.json` points at, so a daemon from an earlier session would keep
+  # serving the PREVIOUS build forever. Its pid must be captured HERE, before
+  # the copy below — the hook hardcodes ~/.omp/agent/dashboard as its state dir
+  # regardless of install scope, so for a user-scope install that IS
+  # "$DASHBOARD_DIR" and the `rm -rf` would destroy state.json first.
+  STATE_FILE="$HOME/.omp/agent/dashboard/state.json"
+  STALE_PID=""
+  if [ -f "$STATE_FILE" ]; then
+    STALE_PID=$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$STATE_FILE" 2>/dev/null | head -1)
+  fi
+
   # Copy the vendored app, minus anything build-time.
   run rm -rf "$DASHBOARD_DIR"
   run mkdir -p "$DASHBOARD_DIR"
@@ -145,8 +157,22 @@ if [ "$DASHBOARD" -eq 1 ]; then
     say "  installing + building web UI…"
     npm --prefix "$DASHBOARD_DIR/web" install
     npm --prefix "$DASHBOARD_DIR/web" run build
+
+    # Stop the stale daemon only now that the build has succeeded: `set -e`
+    # aborts above on a build failure, which leaves the old server up rather
+    # than leaving the user with no dashboard at all. Launching the new one is
+    # deliberately left to the hook — it owns free-port selection, detached
+    # spawn, health polling, and writing state.json.
+    if [ -n "$STALE_PID" ] && kill -0 "$STALE_PID" 2>/dev/null; then
+      kill "$STALE_PID" 2>/dev/null || true
+      sleep 1
+      if kill -0 "$STALE_PID" 2>/dev/null; then kill -9 "$STALE_PID" 2>/dev/null || true; fi
+      say "  stopped the stale dashboard server (pid $STALE_PID)"
+    fi
+    rm -f "$STATE_FILE"
   else
     say "  would: npm install (server, web) + npm run build (web)"
+    say "  would: stop the running dashboard server and clear its state.json"
   fi
 fi
 

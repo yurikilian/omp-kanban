@@ -39,14 +39,12 @@
   outline-offset: -2px;
 }
 
+/* heroicons put `className` directly on the <svg>, so these rules must size
+   the svg itself. A descendant selector (`.activity-rail-toggle-icon svg`)
+   matches nothing, leaving the viewBox-only svg to stretch to fill its flex
+   parent — which rendered these icons at ~215px. */
 .activity-rail-toggle-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 0 0 auto;
-}
-
-.activity-rail-toggle-icon svg {
   width: 1.25rem;
   height: 1.25rem;
   stroke-width: 1.5;
@@ -88,13 +86,7 @@
 }
 
 .activity-rail-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 0 0 auto;
-}
-
-.activity-rail-icon svg {
   width: 1.25rem;
   height: 1.25rem;
   stroke-width: 1.5;

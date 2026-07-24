@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SessionList from './components/SessionList';
 import SessionDetail from './components/SessionDetail';
-import PlanPanel from './components/PlanPanel';
 import ThemeSwitcher from './components/ThemeSwitcher';
 import ActivityRail from './components/ActivityRail';
 import ComingSoon from './components/ComingSoon';
@@ -22,7 +21,6 @@ function AppContent() {
   const [error, setError] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => Math.round(window.innerWidth * 0.25));
   const [sortBy, setSortBy] = useState('created'); // 'created' | 'modified'
-  const [planPanelCollapsed, setPlanPanelCollapsed] = useState(false);
   const [timelineReloadToken, setTimelineReloadToken] = useState(0);
   const resizingRef = useRef(false);
 
@@ -30,7 +28,7 @@ function AppContent() {
     fetchSessions();
   }, []);
 
-  // ---- Preferences (sidebar width / sort order / plan panel), persisted
+  // ---- Preferences (sidebar width / sort order), persisted
   // via GET/PUT /api/preferences instead of staying purely in-memory.
   // `prefsLoadedRef` gates the save effect so the initial state defaults
   // (before the GET response lands) never overwrite whatever was already
@@ -53,7 +51,6 @@ function AppContent() {
         if (cancelled || !prefs) return;
         if (typeof prefs.sidebarWidth === 'number') setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
         if (prefs.sortBy === 'created' || prefs.sortBy === 'modified') setSortBy(prefs.sortBy);
-        if (typeof prefs.planPanelCollapsed === 'boolean') setPlanPanelCollapsed(prefs.planPanelCollapsed);
       })
       .catch(() => {})
       .finally(() => {
@@ -71,11 +68,11 @@ function AppContent() {
       fetch('/api/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sidebarWidth, sortBy, planPanelCollapsed })
+        body: JSON.stringify({ sidebarWidth, sortBy })
       }).catch(() => {});
     }, PREFS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(prefsSaveTimeoutRef.current);
-  }, [sidebarWidth, sortBy, planPanelCollapsed]);
+  }, [sidebarWidth, sortBy]);
 
   // Refs to avoid stale closure issues in the event listener
   const selectedSessionRef = useRef(selectedSession);
@@ -288,11 +285,6 @@ function AppContent() {
                 <p>Select a session to view</p>
               )}
             </main>
-            <PlanPanel
-              collapsed={planPanelCollapsed}
-              onToggleCollapse={() => setPlanPanelCollapsed((c) => !c)}
-              session={selectedSession}
-            />
           </>
         )}
       </div>

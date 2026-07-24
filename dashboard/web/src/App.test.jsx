@@ -55,19 +55,16 @@ describe('App Integration', () => {
     fetch.mockClear();
     MockEventSource.instances = [];
     // Selecting a session mounts SessionDetail, which fetches its own
-    // timeline, plus the always-on preferences (App) and plans (PlanPanel)
-    // GETs. Tests below only queue a `mockResolvedValueOnce` for the
-    // `/api/sessions` call; give every other fetch call a harmless default
-    // response so it doesn't hit `undefined`.
+    // timeline, plus the always-on preferences (App) GET. Tests below only
+    // queue a `mockResolvedValueOnce` for the `/api/sessions` call; give
+    // every other fetch call a harmless default response so it doesn't hit
+    // `undefined`.
     fetch.mockImplementation((url) => {
       if (typeof url === 'string' && url.includes('/timeline')) {
         return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
       }
       if (url === '/api/preferences') {
         return Promise.resolve({ ok: true, json: async () => ({}) });
-      }
-      if (url === '/api/plans') {
-        return Promise.resolve({ ok: true, json: async () => [] });
       }
       return Promise.resolve({ ok: true, json: async () => [] });
     });
@@ -521,9 +518,6 @@ describe('App persisted sidebar width', () => {
       if (typeof url === 'string' && url.includes('/timeline')) {
         return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
       }
-      if (url === '/api/plans') {
-        return Promise.resolve({ ok: true, json: async () => [] });
-      }
       return Promise.resolve({ ok: true, json: async () => [] });
     });
 
@@ -555,5 +549,93 @@ describe('App persisted sidebar width', () => {
     await waitFor(() => {
       expect(parseFloat(sidebar.style.width)).toBe(inBounds);
     }, { timeout: 3000 });
+  });
+});
+
+// The Plans right sidebar was dead weight: a panel nobody used, kept alive by
+// an import, a `planPanelCollapsed` persisted preference and an unconditional
+// `/api/plans` GET on every mount. The REST contract and the `plan_id` column
+// stay; the UI panel and its preference do not.
+describe('App plan panel removal', () => {
+  const mockPrefs = (prefs = {}) => {
+    fetch.mockImplementation((url) => {
+      if (url === '/api/preferences') {
+        return Promise.resolve({ ok: true, json: async () => prefs });
+      }
+      if (typeof url === 'string' && url.includes('/timeline')) {
+        return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+  };
+
+  beforeEach(() => {
+    fetch.mockClear();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // E1-S1-AC1
+  it('renders no .plan-panel element in the sessions view', async () => {
+    mockPrefs();
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('.sidebar')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    expect(container.querySelector('.plan-panel')).toBeNull();
+  });
+
+  // E1-S1-AC2
+  it('omits planPanelCollapsed from the PUT /api/preferences body', async () => {
+    mockPrefs();
+    const { container } = render(<App />);
+
+    // The save effect is gated on `prefsLoadedRef`, which only flips once the
+    // GET /api/preferences round-trip has settled, and it only re-runs when a
+    // watched preference actually changes. Loading a stored value races that
+    // gate, so drive the save the way a user does: toggle the sort order after
+    // the shell has rendered, then let the debounce elapse.
+    const sortButtons = await waitFor(() => {
+      const buttons = container.querySelectorAll('.session-sort-button');
+      expect(buttons.length).toBe(2);
+      return buttons;
+    }, { timeout: 3000 });
+
+    fireEvent.click(sortButtons[1]); // "Recently modified"
+
+    let putCall;
+    await waitFor(() => {
+      putCall = fetch.mock.calls.find(
+        ([url, init]) => url === '/api/preferences' && init?.method === 'PUT'
+      );
+      expect(putCall).toBeTruthy();
+    }, { timeout: 3000 });
+
+    const body = JSON.parse(putCall[1].body);
+    expect(body).toEqual({ sidebarWidth: expect.any(Number), sortBy: 'modified' });
+    expect(putCall[1].body).not.toContain('planPanelCollapsed');
+    expect(body).not.toHaveProperty('planPanelCollapsed');
+  });
+
+  // E1-S1-AC3
+  it('issues no /api/plans fetch after mount and ships no PlanPanel files', async () => {
+    mockPrefs();
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('.sidebar')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    const planCalls = fetch.mock.calls.filter(
+      ([url]) => typeof url === 'string' && url.includes('/api/plans')
+    );
+    expect(planCalls).toEqual([]);
+
+    const fs = require('fs');
+    const path = require('path');
+    expect(fs.existsSync(path.join(__dirname, './components/PlanPanel.jsx'))).toBe(false);
+    expect(fs.existsSync(path.join(__dirname, './components/PlanPanel.css'))).toBe(false);
   });
 });

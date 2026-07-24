@@ -25,6 +25,7 @@ export default function ActivityRail({ active, onSelect }) {
           onClick={() => onSelect(section.id)}
         >
           <section.icon className="activity-rail-icon" aria-hidden="true" />
+          <span className="activity-rail-label">{section.label}</span>
           {section.soon && <span className="activity-rail-soon">Soon</span>}
         </button>
       ))}

@@ -271,7 +271,10 @@ describe('Timeline Component - Turn Grouping', () => {
     render(<Timeline timeline={timeline} />);
     // The user turn should be present
     expect(screen.getByText('Start the task')).toBeInTheDocument();
-    // The tool step should be present within the turn (check for Accordion button with intent text)
+    // Expand the tool-block to see the tool step
+    const toolBlockToggle = screen.getByText(/Tool calls \(1\)/);
+    fireEvent.click(toolBlockToggle);
+    // Now the tool step should be present within the turn (check for Accordion button with intent text)
     expect(screen.getByText(/Spawn a build agent/)).toBeInTheDocument();
     // The nested agent section should be present (but initially collapsed)
     expect(screen.getByText('ServerGo')).toBeInTheDocument();

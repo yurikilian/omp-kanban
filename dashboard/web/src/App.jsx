@@ -37,6 +37,13 @@ function AppContent() {
   // saved server-side.
   const prefsLoadedRef = useRef(false);
   const prefsSaveTimeoutRef = useRef(null);
+  // Clamp sidebar width to valid range (25-40% of viewport)
+  const clampSidebarWidth = (width) => {
+    const minWidth = window.innerWidth * 0.25;
+    const maxWidth = window.innerWidth * 0.4;
+    return Math.min(Math.max(width, minWidth), maxWidth);
+  };
+
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +51,7 @@ function AppContent() {
       .then((res) => (res.ok ? res.json() : {}))
       .then((prefs) => {
         if (cancelled || !prefs) return;
-        if (typeof prefs.sidebarWidth === 'number') setSidebarWidth(prefs.sidebarWidth);
+        if (typeof prefs.sidebarWidth === 'number') setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
         if (prefs.sortBy === 'created' || prefs.sortBy === 'modified') setSortBy(prefs.sortBy);
         if (typeof prefs.planPanelCollapsed === 'boolean') setPlanPanelCollapsed(prefs.planPanelCollapsed);
       })

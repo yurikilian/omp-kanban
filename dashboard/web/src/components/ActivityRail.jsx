@@ -1,5 +1,5 @@
-import React from 'react';
-import { ChatBubbleLeftRightIcon, ChartBarIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect } from 'react';
+import { ChatBubbleLeftRightIcon, ChartBarIcon, Cog6ToothIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import './ActivityRail.css';
 
 // Icon-only left rail switching the app's top-level sections. Sessions,
@@ -13,8 +13,36 @@ const SECTIONS = [
 ];
 
 export default function ActivityRail({ active, onSelect }) {
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    // Initialize from localStorage
+    const stored = localStorage.getItem('sidebar-collapsed');
+    return stored === 'true';
+  });
+
+  // Persist to localStorage on toggle
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', isCollapsed.toString());
+  }, [isCollapsed]);
+
+  const handleToggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
   return (
-    <nav className="activity-rail" aria-label="Primary">
+    <nav 
+      className={`activity-rail ${isCollapsed ? 'collapsed' : ''}`} 
+      aria-label="Primary"
+    >
+      <button
+        type="button"
+        className="activity-rail-toggle"
+        onClick={handleToggleCollapse}
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-expanded={!isCollapsed}
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <ChevronLeftIcon className="activity-rail-toggle-icon" aria-hidden="true" />
+      </button>
       {SECTIONS.map((section) => (
         <button
           key={section.id}
@@ -25,8 +53,8 @@ export default function ActivityRail({ active, onSelect }) {
           onClick={() => onSelect(section.id)}
         >
           <section.icon className="activity-rail-icon" aria-hidden="true" />
-          <span className="activity-rail-label">{section.label}</span>
-          {section.soon && <span className="activity-rail-soon">Soon</span>}
+          {!isCollapsed && <span className="activity-rail-label">{section.label}</span>}
+          {section.soon && !isCollapsed && <span className="activity-rail-soon">Soon</span>}
         </button>
       ))}
     </nav>

@@ -1,7 +1,84 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import Timeline from './Timeline';
+import Timeline, { groupEventsByTurn } from './Timeline';
+
+describe('groupEventsByTurn', () => {
+  it('groups a user event with following assistant/tool/system events into one bounded block, splitting at the next user event', () => {
+    const events = [
+      { role: 'user', content: 'First prompt', ts: '2026-07-21T14:00:00.000Z', agent: 'main' },
+      { role: 'assistant', content: 'First reply', ts: '2026-07-21T14:00:01.000Z', agent: 'main' },
+      { role: 'tool', toolName: 'bash', ts: '2026-07-21T14:00:02.000Z', agent: 'main' },
+      { role: 'user', content: 'Second prompt', ts: '2026-07-21T14:00:03.000Z', agent: 'main' },
+      { role: 'assistant', content: 'Second reply', ts: '2026-07-21T14:00:04.000Z', agent: 'main' }
+    ];
+    const groups = groupEventsByTurn(events);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].groupType).toBe('turn');
+    expect(groups[0].userEvent).toBe(events[0]);
+    expect(groups[0].followingEvents).toEqual([events[1], events[2]]);
+    expect(groups[1].groupType).toBe('turn');
+    expect(groups[1].userEvent).toBe(events[3]);
+    expect(groups[1].followingEvents).toEqual([events[4]]);
+  });
+
+  it('leading assistant/tool events before any user event form one leading group with no orphaned events', () => {
+    const events = [
+      { role: 'assistant', content: 'First reply', ts: '2026-07-21T14:00:00.000Z', agent: 'main' },
+      { role: 'tool', toolName: 'bash', ts: '2026-07-21T14:00:01.000Z', agent: 'main' },
+      { role: 'system', content: 'System message', ts: '2026-07-21T14:00:02.000Z', agent: 'main' },
+      { role: 'user', content: 'User prompt', ts: '2026-07-21T14:00:03.000Z', agent: 'main' }
+    ];
+    const groups = groupEventsByTurn(events);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].groupType).toBe('leading');
+    expect(groups[0].followingEvents).toEqual([events[0], events[1], events[2]]);
+    expect(groups[1].groupType).toBe('turn');
+    expect(groups[1].userEvent).toBe(events[3]);
+  });
+
+  it('returns empty array for empty events list', () => {
+    const groups = groupEventsByTurn([]);
+    expect(groups).toEqual([]);
+  });
+
+  it('preserves nested children within their parent turn group', () => {
+    const childAgent = {
+      agent: 'ServerGo',
+      lane: 1,
+      events: [{ role: 'tool', ts: '2026-07-21T14:00:02.000Z' }]
+    };
+    const events = [
+      { role: 'user', content: 'Prompt', ts: '2026-07-21T14:00:00.000Z', agent: 'main' },
+      { role: 'tool', toolName: 'bash', ts: '2026-07-21T14:00:01.000Z', agent: 'main', children: [childAgent] },
+      { role: 'assistant', content: 'Reply', ts: '2026-07-21T14:00:03.000Z', agent: 'main' }
+    ];
+    const groups = groupEventsByTurn(events);
+    expect(groups[0].followingEvents[0].children).toEqual([childAgent]);
+  });
+
+  it('handles only non-user events (all leading)', () => {
+    const events = [
+      { role: 'assistant', content: 'Reply', ts: '2026-07-21T14:00:00.000Z', agent: 'main' },
+      { role: 'tool', toolName: 'bash', ts: '2026-07-21T14:00:01.000Z', agent: 'main' }
+    ];
+    const groups = groupEventsByTurn(events);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].groupType).toBe('leading');
+    expect(groups[0].followingEvents).toEqual(events);
+  });
+
+  it('handles only user events', () => {
+    const events = [
+      { role: 'user', content: 'First', ts: '2026-07-21T14:00:00.000Z', agent: 'main' },
+      { role: 'user', content: 'Second', ts: '2026-07-21T14:00:01.000Z', agent: 'main' }
+    ];
+    const groups = groupEventsByTurn(events);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].followingEvents).toEqual([]);
+    expect(groups[1].followingEvents).toEqual([]);
+  });
+});
 
 describe('Timeline Component', () => {
   const childTool = {
@@ -126,5 +203,81 @@ describe('Timeline Component', () => {
     const assistantTurn = assistantEl.closest('.turn-assistant');
     // eslint-disable-next-line no-bitwise
     expect(userTurn.compareDocumentPosition(assistantTurn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('Timeline Component - Turn Grouping', () => {
+  const childTool = {
+    agent: 'ServerGo',
+    lane: 1,
+    role: 'tool',
+    ts: '2026-07-21T14:01:30.000Z',
+    toolName: 'bash',
+    intent: 'Run build',
+    durationMs: 701000,
+    isError: true,
+    resultContent: 'build failed'
+  };
+
+  it('a turn that spawned sub-agents still renders its nested AgentSection within the turn group', () => {
+    const timeline = {
+      id: 'session-1',
+      name: 'Session',
+      project: 'proj',
+      count: 3,
+      agents: [
+        { name: 'main', lane: 0 },
+        { name: 'ServerGo', lane: 1 }
+      ],
+      root: {
+        agent: 'main',
+        lane: 0,
+        firstTs: '2026-07-21T14:00:00.000Z',
+        lastTs: '2026-07-21T14:05:00.000Z',
+        durationMs: 300000,
+        count: 2,
+        events: [
+          {
+            agent: 'main',
+            lane: 0,
+            role: 'user',
+            ts: '2026-07-21T14:00:00.000Z',
+            content: 'Start the task'
+          },
+          {
+            agent: 'main',
+            lane: 0,
+            role: 'tool',
+            ts: '2026-07-21T14:01:00.000Z',
+            toolName: 'task',
+            intent: 'Spawn a build agent',
+            durationMs: 20,
+            resultContent: 'Spawned 1 agent.',
+            children: [
+              {
+                agent: 'ServerGo',
+                lane: 1,
+                firstTs: '2026-07-21T14:01:30.000Z',
+                lastTs: '2026-07-21T14:01:30.000Z',
+                durationMs: 0,
+                count: 1,
+                events: [childTool]
+              }
+            ]
+          }
+        ]
+      }
+    };
+    render(<Timeline timeline={timeline} />);
+    // The user turn should be present
+    expect(screen.getByText('Start the task')).toBeInTheDocument();
+    // The tool step should be present within the turn (check for Accordion button with intent text)
+    expect(screen.getByText(/Spawn a build agent/)).toBeInTheDocument();
+    // The nested agent section should be present (but initially collapsed)
+    expect(screen.getByText('ServerGo')).toBeInTheDocument();
+    // Expand the nested section
+    fireEvent.click(screen.getByText('ServerGo').closest('.timeline-section-header'));
+    // Now the child tool should be visible
+    expect(screen.getByText('✕ bash')).toBeInTheDocument();
   });
 });

@@ -65,6 +65,15 @@
 
 /* Dark Mode */
 [data-theme="dark"] {
+  /* Semantic Brand Palette - Dark Mode */
+  --primary: #4da6ff;
+  --success: #4db84d;
+  --warning: #ffb84d;
+  --danger: #f77066;
+  --neutral: #a8a8a8;
+  --sidebar-bg: #242424;
+  
+  /* Layout & Surface Colors */
   --bg-primary: #0f0f0f;
   --bg-surface: #1a1a1a;
   --bg-elevated: #242424;

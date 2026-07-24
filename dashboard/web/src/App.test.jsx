@@ -457,12 +457,21 @@ describe('Theme System', () => {
     
     // For UI elements (>=3:1), we expect primary to meet this
     // For text (>=4.5:1), we expect it to meet this too
-    expect(contrastRatio).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio).toBeGreaterThanOrEqual(4.5);
+    
+    
+    // F1 fix: In dark mode, active sidebar items should have dark text on light background
+    // This test verifies that F1's override (color: var(--bg-primary)) solves the white-on-primary contrast issue
+    // bg-primary in dark mode is #0f0f0f, so we need to test contrast of dark text on primary
+    const darkTextRGB = hexToRGB('#0f0f0f');  // --bg-primary in dark mode
+    const darkTextOnPrimaryContrast = computeContrastRatio(darkTextRGB, primaryRGB);
+    // Dark text (#0f0f0f) on primary should have good contrast
+    expect(darkTextOnPrimaryContrast).toBeGreaterThanOrEqual(4.5);
   });
 
   it('reloading with saved app-theme=dark applies data-theme=dark from localStorage before first paint (ThemeContext reused)', async () => {
-    // Mock localStorage
-    const store = {};
+    // Mock localStorage to have app-theme=dark
+    const store = { 'app-theme': 'dark' };
     const mockLocalStorage = {
       getItem: (key) => store[key] || null,
       setItem: (key, value) => { store[key] = value; },
@@ -472,15 +481,16 @@ describe('Theme System', () => {
     
     Object.defineProperty(window, 'localStorage', {
       value: mockLocalStorage,
-      writable: true
+      writable: true,
+      configurable: true
     });
     
-    // Set dark theme in localStorage
-    mockLocalStorage.setItem('app-theme', 'dark');
+    // Render App with dark theme preset in localStorage
+    render(<App />);
     
-    // Verify that ThemeContext will read this on mount
-    const savedTheme = mockLocalStorage.getItem('app-theme');
-    expect(savedTheme).toBe('dark');
+    // Verify the root element has data-theme='dark' applied
+    const root = document.documentElement;
+    expect(root).toHaveAttribute('data-theme', 'dark');
     
     // Clean up
     mockLocalStorage.clear();

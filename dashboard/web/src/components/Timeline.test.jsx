@@ -625,3 +625,95 @@ describe('Timeline Component - Tool Block Collapse', () => {
     expect(screen.queryByText('Run tests')).not.toBeInTheDocument();
   });
 });
+
+describe('Timeline Component - Readability (E3-S4)', () => {
+  const timeline = {
+    id: 'session-1',
+    name: 'Session',
+    project: 'proj',
+    count: 3,
+    agents: [
+      { name: 'main', lane: 0 }
+    ],
+    root: {
+      agent: 'main',
+      lane: 0,
+      firstTs: '2026-07-21T14:00:00.000Z',
+      lastTs: '2026-07-21T14:05:00.000Z',
+      durationMs: 300000,
+      count: 3,
+      events: [
+        {
+          agent: 'main',
+          lane: 0,
+          role: 'user',
+          ts: '2026-07-21T14:00:00.000Z',
+          content: 'Start the task'
+        },
+        {
+          agent: 'main',
+          lane: 0,
+          role: 'assistant',
+          ts: '2026-07-21T14:02:00.000Z',
+          content: 'On it.',
+          tokensIn: 2,
+          tokensOut: 10,
+          cost: 0.05
+        },
+        {
+          agent: 'main',
+          lane: 0,
+          role: 'user',
+          ts: '2026-07-21T14:03:00.000Z',
+          content: 'Continue'
+        }
+      ]
+    }
+  };
+
+  it('renders timestamp elements with title attribute containing raw ISO datetime (AC1)', () => {
+    render(<Timeline timeline={timeline} />);
+    // Find all turn-time elements and check they have title attributes with ISO format
+    const timestamps = screen.getAllByText(/ago|now/);
+    // User turn timestamp should have title
+    const userTimestampElement = timestamps[0];
+    expect(userTimestampElement).toHaveAttribute('title');
+    expect(userTimestampElement.getAttribute('title')).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('adjacent turn-groups render with turn-group class for visual separation (AC2)', () => {
+    render(<Timeline timeline={timeline} />);
+    // Find all turn-group divs - they should exist and have the proper class
+    const turnGroups = document.querySelectorAll('.turn-group');
+    // Should have at least 2 groups (one for first user, one for second user)
+    expect(turnGroups.length).toBeGreaterThanOrEqual(2);
+    // Each turn-group should have the class (verified by querySelector above)
+    turnGroups.forEach(group => {
+      expect(group.classList.contains('turn-group')).toBe(true);
+      // Verify CSS styling is applied - margin-bottom should be on the element
+      const computedStyle = window.getComputedStyle(group);
+      // In jsdom, we can check that margin-bottom is defined (though numeric conversion may be lossy)
+      const marginBottom = computedStyle.marginBottom;
+      // Should have some margin-bottom (CSS defines 1.5rem)
+      expect(marginBottom).toBeTruthy();
+    });
+  });
+
+  it('conversation content does not have hardcoded width constraints (AC3 prerequisite)', () => {
+    render(<Timeline timeline={timeline} />);
+    // The turn-group and turn divs should not have inline hardcoded widths
+    const turnGroups = document.querySelectorAll('.turn-group');
+    expect(turnGroups.length).toBeGreaterThanOrEqual(1);
+    turnGroups.forEach(group => {
+      // Check that turn-group doesn't have inline width style that would prevent reflow
+      const inlineWidth = group.style.width;
+      expect(inlineWidth).toBe('');
+      // Check that child turn elements also don't have hardcoded widths
+      const turns = group.querySelectorAll('.turn');
+      turns.forEach(turn => {
+        const turnInlineWidth = turn.style.width;
+        expect(turnInlineWidth).toBe('');
+      });
+    });
+  });
+});

@@ -1,58 +1,138 @@
 ---
 name: kb-dev
 description: Implements one task with strict red-green-refactor TDD, writing unit and component tests before implementation. Runs in parallel across tasks in a layer, and handles scoped rework from the critic.
-tools: read, write, edit, search, find, bash, lsp
-model: default
+tools:
+  - read
+  - write
+  - edit
+  - grep
+  - glob
+  - bash
+  - lsp
+  - yield
+model:
+  - "@default"
 spawns: []
 thinkingLevel: medium
 output:
-  type: object
-  required: [task_id, status, files_changed, tests_added]
   properties:
-    task_id: { type: string }
-    status: { type: string, enum: [done, blocked] }
-    branch: { type: string }
-    files_changed: { type: array, items: { type: string } }
-    boundary_violations:
-      type: array
-      items:
-        type: object
-        properties:
-          path: { type: string }
-          needed_for: { type: string }
+    task_id:
+      metadata:
+        description: The task this agent owned
+      type: string
+    status:
+      metadata:
+        description: Whether the task completed or was blocked
+      enum:
+        - done
+        - blocked
+    files_changed:
+      metadata:
+        description: Files created or modified, all within the task's files_touched claim
+      elements:
+        type: string
     tests_added:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Tests written for this task
+      elements:
         properties:
-          name: { type: string }
-          type: { type: string, enum: [unit, component] }
-          covers_ac: { type: array, items: { type: string } }
-          file: { type: string }
+          name:
+            metadata:
+              description: Test name
+            type: string
+          type:
+            metadata:
+              description: Test layer
+            enum:
+              - unit
+              - component
+          covers_ac:
+            metadata:
+              description: Acceptance-criterion IDs this test covers
+            elements:
+              type: string
+          file:
+            metadata:
+              description: File the test lives in
+            type: string
+  optionalProperties:
+    branch:
+      metadata:
+        description: Branch the work landed on
+      type: string
+    boundary_violations:
+      metadata:
+        description: Files needed outside the task's files_touched claim, not edited
+      elements:
+        properties:
+          path:
+            metadata:
+              description: Path of the out-of-boundary file
+            type: string
+          needed_for:
+            metadata:
+              description: Why the change needed it
+            type: string
     suite_result:
-      type: object
+      metadata:
+        description: Full-suite result after the task; status already signals green
       properties:
-        passed: { type: integer }
-        failed: { type: integer }
-        skipped: { type: integer }
+        passed:
+          metadata:
+            description: Tests passed
+          type: number
+        failed:
+          metadata:
+            description: Tests failed
+          type: number
+        skipped:
+          metadata:
+            description: Tests skipped
+          type: number
     decisions:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Design choices worth recording rather than building speculatively
+      elements:
         properties:
-          chose: { type: string }
-          over: { type: string }
-          because: { type: string }
-          reversible: { type: boolean }
-    surprises: { type: array, items: { type: string } }
+          chose:
+            metadata:
+              description: What was chosen
+            type: string
+          over:
+            metadata:
+              description: The alternative not chosen
+            type: string
+          because:
+            metadata:
+              description: Why
+            type: string
+          reversible:
+            metadata:
+              description: Whether the decision is cheap to reverse later
+            type: boolean
+    surprises:
+      metadata:
+        description: Things encountered that the task did not anticipate
+      elements:
+        type: string
     preexisting_defects:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Defects found that this task did not introduce and did not fix
+      elements:
         properties:
-          location: { type: string }
-          evidence: { type: string }
-    known_gaps: { type: array, items: { type: string } }
+          location:
+            metadata:
+              description: Where the defect is
+            type: string
+          evidence:
+            metadata:
+              description: What proves it is a defect
+            type: string
+    known_gaps:
+      metadata:
+        description: Gaps the developer is aware the implementation still has
+      elements:
+        type: string
 ---
 
 You are a developer agent in the In Progress column. You own exactly one task.

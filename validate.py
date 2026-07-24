@@ -20,17 +20,23 @@ except ImportError:
 
 ROOT = Path(__file__).parent
 AGENTS = ROOT / "agents"
-SKILL = ROOT / "skills" / "kanban-cycle" / "SKILL.md"
+SKILLS = ROOT / "skills"
 HOOKS = ROOT / "hooks"
 DASHBOARD = ROOT / "dashboard"
 
-# omp ships these; a same-named file silently overrides them.
-BUNDLED = {"explore", "plan", "designer", "reviewer",
-           "librarian", "oracle", "task", "quick_task"}
+# omp ships these; a same-named file silently overrides them. The confirmed set
+# comes from ~/.omp/agent/agents/ (designer, librarian, reviewer, scout, sonic,
+# task); explore/plan/oracle/quick_task are kept as a documented superset.
+BUNDLED = {"explore", "plan", "designer", "reviewer", "librarian",
+           "oracle", "task", "quick_task", "scout", "sonic"}
 FIELDS = {"name", "description", "tools", "model", "spawns", "thinkingLevel",
           "output", "blocking", "autoloadSkills", "read-summarize"}
-ROLES = {"smol", "default", "slow", "plan", "commit"}
-THINKING = {"minimal", "low", "medium", "high", "xhigh"}
+# Roles are referenced with an "@" sigil in the model field and given as a list.
+ROLES = {"@smol", "@default", "@slow", "@fast", "@task", "@designer"}
+THINKING = {"minimal", "low", "medium", "high", "xhigh", "auto"}
+# Tool names omp actually exposes (verified from exported agents + session logs).
+TOOLS = {"read", "write", "edit", "grep", "glob", "bash", "lsp", "web_search",
+         "ast_grep", "yield", "hub", "todo", "task", "advise", "web"}
 
 errors, warnings = [], []
 
@@ -72,10 +78,25 @@ def check_agent(path):
         if key not in FIELDS:
             errors.append(f"{path.name}: unknown frontmatter field '{key}'")
 
-    if "model" in fm and fm["model"] not in ROLES:
-        errors.append(
-            f"{path.name}: model '{fm['model']}' is not a role "
-            f"({', '.join(sorted(ROLES))})")
+    # model is a list of "@"-prefixed roles (omp's own agents all use list form)
+    if "model" in fm:
+        roles = fm["model"] if isinstance(fm["model"], list) else [fm["model"]]
+        for role in roles:
+            if role not in ROLES:
+                errors.append(
+                    f"{path.name}: model role '{role}' is not a known role "
+                    f"({', '.join(sorted(ROLES))}) — roles carry an '@' sigil")
+
+    # tools is a list of omp tool names; the CSV form and names like search/find/
+    # irc/github do not exist in omp and fail silently at dispatch.
+    if "tools" in fm:
+        names = (fm["tools"] if isinstance(fm["tools"], list)
+                 else [t.strip() for t in str(fm["tools"]).split(",")])
+        for tool in names:
+            if tool and tool not in TOOLS:
+                errors.append(
+                    f"{path.name}: tool '{tool}' is not a known omp tool name "
+                    f"({', '.join(sorted(TOOLS))})")
 
     if "thinkingLevel" in fm and fm["thinkingLevel"] not in THINKING:
         errors.append(f"{path.name}: invalid thinkingLevel '{fm['thinkingLevel']}'")
@@ -86,6 +107,13 @@ def check_agent(path):
             json.dumps(fm["output"])
         except (TypeError, ValueError) as e:
             errors.append(f"{path.name}: output schema not JSON-serializable: {e}")
+        # omp expects its properties/optionalProperties DSL, not JSON Schema.
+        if isinstance(fm["output"], dict) and (
+                "type" in fm["output"] or "required" in fm["output"]):
+            errors.append(
+                f"{path.name}: output uses JSON-Schema keys (type/required) — omp "
+                f"expects the properties/optionalProperties DSL with per-field "
+                f"metadata.description")
         if re.search(r"^Return a short prose", body, re.M):
             errors.append(
                 f"{path.name}: has an output schema AND asks for a prose return "
@@ -197,26 +225,38 @@ def main():
     for path in found:
         fm = check_agent(path)
         if fm:
+            model = fm.get("model", "inherit")
+            if isinstance(model, list):
+                model = ",".join(model)
             rows.append((fm.get("name", path.stem),
-                         fm.get("model", "inherit"),
+                         model,
                          "json" if "output" in fm else "prose"))
 
-    # skill
-    if not SKILL.exists():
-        errors.append(f"missing skill at {SKILL.relative_to(ROOT)}")
-    else:
-        fm, body = frontmatter(SKILL)
-        if fm:
-            if fm.get("name") != "kanban-cycle":
-                errors.append("SKILL.md: name should be 'kanban-cycle'")
-            if not fm.get("description"):
-                errors.append("SKILL.md: missing description (it gates the skill)")
-            referenced = set(re.findall(r"`(kb-[a-z]+)`", body))
-            on_disk = {p.stem for p in found}
-            for missing in sorted(referenced - on_disk):
-                errors.append(f"SKILL.md dispatches '{missing}' but no such agent file")
-            for unused in sorted(on_disk - referenced):
-                warnings.append(f"{unused} exists but the skill never references it")
+    # skills — discovery is non-recursive, exactly one directory deep under
+    # skills/. Validate every SKILL.md, and check agent references across all of
+    # them together so an agent used by any skill is not flagged unused.
+    on_disk = {p.stem for p in found}
+    skill_files = sorted(SKILLS.glob("*/SKILL.md"))
+    if not skill_files:
+        errors.append(f"no skills found under {SKILLS.relative_to(ROOT)}")
+    referenced = set()
+    for skill in skill_files:
+        rel = skill.relative_to(ROOT)
+        fm, body = frontmatter(skill)
+        if not fm:
+            continue
+        if fm.get("name") != skill.parent.name:
+            errors.append(
+                f"{rel}: name '{fm.get('name')}' must match its directory "
+                f"'{skill.parent.name}' — omp discovers skills by directory")
+        if not fm.get("description"):
+            errors.append(f"{rel}: missing description (it gates the skill)")
+        refs = set(re.findall(r"`(kb-[a-z]+)`", body))
+        referenced |= refs
+        for missing in sorted(refs - on_disk):
+            errors.append(f"{rel} dispatches '{missing}' but no such agent file")
+    for unused in sorted(on_disk - referenced):
+        warnings.append(f"{unused} exists but no skill references it")
 
     check_manifest()
     hooks = check_hooks()
@@ -239,7 +279,8 @@ def main():
                 print(f"ERROR: {e}")
             print(f"\n{len(errors)} error(s), {len(warnings)} warning(s)")
         else:
-            print(f"OK — {len(rows)} agents + skill valid"
+            n_sk = len(skill_files)
+            print(f"OK — {len(rows)} agents + {n_sk} skill{'s' if n_sk != 1 else ''} valid"
                   + (f", {len(warnings)} warning(s)" if warnings else ""))
 
     return 1 if errors else 0

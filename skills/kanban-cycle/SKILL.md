@@ -1,6 +1,6 @@
 ---
 name: kanban-cycle
-description: Runs a full kanban development lifecycle on an issue or specification — planning into user stories and acceptance criteria, parallel TDD implementation, two-agent review that negotiates over IRC and applies fixes, QA with e2e tests, and a pull request with release notes. Use whenever the user hands over a feature spec, requirements document, GitHub issue, bug report, or any description of work to be built and asks to implement it, build it, ship it, or run the board — even without saying "kanban". Also use when asked to plan work into tasks and then execute it, or to take work from description all the way to PR.
+description: Runs a full kanban development lifecycle on an issue or specification — planning into user stories and acceptance criteria, parallel TDD implementation, two-agent review that negotiates over the hub and applies fixes, QA with e2e tests, and a pull request with release notes. Use whenever the user hands over a feature spec, requirements document, GitHub issue, bug report, or any description of work to be built and asks to implement it, build it, ship it, or run the board — even without saying "kanban". Also use when asked to plan work into tasks and then execute it, or to take work from description all the way to PR.
 ---
 
 # Kanban Cycle
@@ -175,7 +175,7 @@ After each layer, read every returned object:
 Do not advance while the current layer has blocked tasks — that accumulates work
 in progress without delivering any of it.
 
-### 5. In Review — two agents over IRC
+### 5. In Review — two agents over the hub
 
 Once the last layer is done and no task is blocked, set `column: "in_review"` in
 `<run_dir>/state.json` before dispatching. Nothing upstream sets it — `kb-decompose`
@@ -183,12 +183,12 @@ leaves the board at `in_progress` and `kb-critic` advances it to `qa` — so wit
 this write an interrupt here resumes into the In Progress fan-out and re-runs it.
 
 Dispatch `kb-review` and `kb-critic` **in the same `task` call** so both are live
-on the IRC bus. Give both the same channel name and each other's nick.
+on the hub at once. Give each the other's agent name so they can `hub send` to it.
 
 They negotiate directly: the reviewer produces findings, the critic challenges
 them with evidence, both concede where wrong, and the critic reconciles and
 **applies the surviving fixes**. Then the reviewer verifies those fixes over the
-same channel before the verdict is finalized — an independent check on the fixer,
+hub before the verdict is finalized — an independent check on the fixer,
 since the critic both rules and fixes. There is no separate arbiter and no
 round-trip back to a developer.
 
@@ -283,14 +283,14 @@ least rigor the work justifies and escalates only on evidence it is needed.
 
 | Column | Agent | Role | Concurrency |
 |---|---|---|---|
-| Intake | `kb-intake` | smol | 1 |
-| Backlog | `kb-planner` | slow | 1 (spec only) |
-| Todo | `kb-decompose` | slow | 1 |
-| In Progress | `kb-dev` | default | parallel per layer |
-| In Review | `kb-review` + `kb-critic` | slow + default | 2, over IRC |
-| QA | `kb-qa` | default | 1 |
-| Done | `kb-release` | smol | 1 |
-| Post-cycle | `kb-retro` | smol | 1 (skip if trivial) |
+| Intake | `kb-intake` | `@smol` | 1 |
+| Backlog | `kb-planner` | `@slow` | 1 (spec only) |
+| Todo | `kb-decompose` | `@slow` | 1 |
+| In Progress | `kb-dev` | `@default` | parallel per layer |
+| In Review | `kb-review` + `kb-critic` | `@slow` + `@default` | 2, over the hub |
+| QA | `kb-qa` | `@default` | 1 |
+| Done | `kb-release` | `@smol` | 1 |
+| Post-cycle | `kb-retro` | `@smol` | 1 (skip if trivial) |
 
 `kb-forensics` is separate from the board — dispatch it when spend needs
 auditing, not as part of a cycle.

@@ -1,56 +1,137 @@
 ---
 name: kb-qa
 description: Runs the full verification suite end to end — unit, component, integration, e2e, lint, typecheck, build — writes missing e2e specs mapped to acceptance criteria, and scaffolds Playwright when no e2e framework exists. Final gate before release.
-tools: read, write, edit, search, find, bash
-model: default
+tools:
+  - read
+  - write
+  - edit
+  - grep
+  - glob
+  - bash
+  - yield
+model:
+  - "@default"
 spawns: []
 thinkingLevel: medium
 output:
-  type: object
-  required: [verdict, framework, results]
   properties:
-    verdict: { type: string, enum: [pass, fail] }
-    framework: { type: string }
-    scaffolded: { type: boolean }
-    e2e_skipped: { type: boolean }
-    skip_reason: { type: ["string", "null"] }
+    verdict:
+      metadata:
+        description: Whether the system passed verification as a whole
+      enum:
+        - pass
+        - fail
+    framework:
+      metadata:
+        description: The e2e framework detected or scaffolded
+      type: string
     results:
-      type: object
-      properties:
-        unit: { type: object }
-        component: { type: object }
-        integration: { type: object }
-        e2e: { type: object }
-        lint: { type: object }
-        typecheck: { type: object }
-        build: { type: object }
+      metadata:
+        description: Outcome of each verification suite that was run
+      elements:
+        properties:
+          suite:
+            metadata:
+              description: Which suite ran
+            enum:
+              - unit
+              - component
+              - integration
+              - e2e
+              - lint
+              - typecheck
+              - build
+          status:
+            metadata:
+              description: Suite outcome
+            enum:
+              - pass
+              - fail
+              - skipped
+          summary:
+            metadata:
+              description: Short count summary, e.g. "42 passed, 0 failed"
+            type: string
+  optionalProperties:
+    scaffolded:
+      metadata:
+        description: Whether Playwright was scaffolded because no e2e framework existed
+      type: boolean
+    e2e_skipped:
+      metadata:
+        description: Whether e2e was skipped because no runnable server was detected
+      type: boolean
+    skip_reason:
+      metadata:
+        description: Why e2e was skipped; present only when e2e_skipped is true
+      type: string
     ac_verification:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Per-acceptance-criterion e2e verification results
+      elements:
         properties:
-          ac_id: { type: string }
-          e2e_test: { type: string }
-          status: { type: string, enum: [pass, fail, not-covered] }
+          ac_id:
+            metadata:
+              description: Acceptance-criterion ID
+            type: string
+          e2e_test:
+            metadata:
+              description: The e2e test that covers it
+            type: string
+          status:
+            metadata:
+              description: Verification outcome
+            enum:
+              - pass
+              - fail
+              - not-covered
     failures:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Individual test failures across all suites
+      elements:
         properties:
-          suite: { type: string }
-          test: { type: string }
-          error: { type: string }
-          suspected_task: { type: string }
+          suite:
+            metadata:
+              description: Suite the failure occurred in
+            type: string
+          test:
+            metadata:
+              description: Failing test name
+            type: string
+          error:
+            metadata:
+              description: Failure message
+            type: string
+          suspected_task:
+            metadata:
+              description: Task most likely responsible
+            type: string
     escapes:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Defects that reached QA, and the earlier layer that should have caught them
+      elements:
         properties:
-          failure: { type: string }
-          why_not_caught_earlier: { type: string }
-          missing_layer: { type: string }
-          prevention: { type: string }
-    flaky: { type: array, items: { type: string } }
+          failure:
+            metadata:
+              description: The defect that escaped
+            type: string
+          why_not_caught_earlier:
+            metadata:
+              description: Why an earlier layer missed it
+            type: string
+          missing_layer:
+            metadata:
+              description: The verification layer that had the gap
+            type: string
+          prevention:
+            metadata:
+              description: What would catch this class earlier next time
+            type: string
+    flaky:
+      metadata:
+        description: Tests that passed only on retry
+      elements:
+        type: string
 ---
 
 You are the QA agent — the last gate before a pull request. Everything before you

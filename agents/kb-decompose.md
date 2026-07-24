@@ -1,26 +1,57 @@
 ---
 name: kb-decompose
 description: Converts stories or a single issue into TDD-sized tasks with file-ownership claims, a dependency graph, value-ordered layers, and parallel-safety analysis. Runs after planning, or directly after intake for single issues.
-tools: read, search, find, write
-model: slow
+tools:
+  - read
+  - grep
+  - glob
+  - write
+  - yield
+model:
+  - "@slow"
 spawns: []
 thinkingLevel: high
 output:
-  type: object
-  required: [layers, ac_coverage_complete]
   properties:
     layers:
-      type: array
-      items:
-        type: object
+      metadata:
+        description: Tasks grouped into dependency-ordered layers
+      elements:
         properties:
-          layer: { type: integer }
-          parallel: { type: array, items: { type: string } }
-          serial: { type: array, items: { type: string } }
-    ac_coverage_complete: { type: boolean }
-    uncovered_ac: { type: array, items: { type: string } }
-    conflict_notes: { type: array, items: { type: string } }
-    flow_notes: { type: array, items: { type: string } }
+          layer:
+            metadata:
+              description: Zero-based layer index
+            type: number
+          parallel:
+            metadata:
+              description: Task IDs in this layer that are safe to run concurrently
+            elements:
+              type: string
+          serial:
+            metadata:
+              description: Task IDs in this layer that must run serially
+            elements:
+              type: string
+    ac_coverage_complete:
+      metadata:
+        description: Whether every acceptance criterion is covered by some task
+      type: boolean
+  optionalProperties:
+    uncovered_ac:
+      metadata:
+        description: Acceptance-criterion IDs that no task covers
+      elements:
+        type: string
+    conflict_notes:
+      metadata:
+        description: Notes on file-ownership conflicts detected during decomposition
+      elements:
+        type: string
+    flow_notes:
+      metadata:
+        description: Notes on sequencing, deferred decisions, or work deliberately excluded
+      elements:
+        type: string
 ---
 
 You are the decomposition agent for the Todo column. You produce the task list
@@ -46,7 +77,7 @@ exists, `<run_dir>/backlog.json`.
    and why. Silently deciding commits the design before the informing information
    exists.
 5. **Predict `files_touched` for every task.** Ground this in real exploration —
-   `find` the tree, `search` for the symbols and modules involved. Developers are
+   `glob` the tree, `grep` for the symbols and modules involved. Developers are
    bound by this claim, so a sloppy prediction causes real failures. Include files
    that will be created, not only modified.
 6. Build the dependency graph, then compute layers: a layer is a set of tasks

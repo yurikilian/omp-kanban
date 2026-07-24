@@ -80,16 +80,30 @@ describe('ActivityRail Active State (E1-S1-AC2)', () => {
 });
 
 describe('WCAG AA Contrast (E1-S1-AC3)', () => {
-  it('primary blue (#0d6efd) meets WCAG AA contrast against light background', () => {
-    // E1-S1-AC3: Verify that --primary blue (#0d6efd) has >= 4.5:1 contrast with light background
-    // #0d6efd RGB: 13, 110, 253 (light blue)
-    // Light background: white (#ffffff) RGB: 255, 255, 255
-    // Text color: white (#ffffff) RGB: 255, 255, 255
+  it('primary blue meets WCAG AA contrast against light background', () => {
+    // E1-S1-AC3: Verify that --primary color (from theme.css) has >= 4.5:1 contrast in light mode
+    const fs = require('fs');
+    const path = require('path');
+    const themeCssPath = path.join(__dirname, '../theme.css');
+    const themeCss = fs.readFileSync(themeCssPath, 'utf-8');
     
-    const primaryRgb = { r: 13, g: 110, b: 253 };
-    const lightBgRgb = { r: 255, g: 255, b: 255 };
-    const whiteTextRgb = { r: 255, g: 255, b: 255 };
+    // Extract light-mode primary color from :root block
+    const lightModeMatch = themeCss.match(/:root\s*\{([\s\S]*?)\}[\s\S]*?\[data-theme/);
+    expect(lightModeMatch).toBeTruthy();
+    const lightModeBlock = lightModeMatch[1];
     
+    const primaryMatch = lightModeBlock.match(/--primary\s*:\s*(#[0-9a-fA-F]{6})/);
+    expect(primaryMatch).toBeTruthy();
+    const primaryHex = primaryMatch[1];
+    
+    // Helper to parse hex to RGB
+    const hexToRGB = (hex) => ({
+      r: parseInt(hex.substring(1, 3), 16),
+      g: parseInt(hex.substring(3, 5), 16),
+      b: parseInt(hex.substring(5, 7), 16)
+    });
+    
+    // Helper to compute luminance and contrast
     const getLuminance = ({ r, g, b }) => {
       const [rs, gs, bs] = [r, g, b].map(x => {
         const c = x / 255;
@@ -98,10 +112,18 @@ describe('WCAG AA Contrast (E1-S1-AC3)', () => {
       return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
     };
     
-    // Calculate contrast ratio for primary blue background with white text
-    const l1 = getLuminance(primaryRgb);
-    const l2 = getLuminance(whiteTextRgb);
-    const contrast = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    const computeContrast = (rgb1, rgb2) => {
+      const l1 = getLuminance(rgb1);
+      const l2 = getLuminance(rgb2);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+    
+    const primaryRgb = hexToRGB(primaryHex);
+    const lightBgRgb = { r: 255, g: 255, b: 255 };
+    const whiteTextRgb = { r: 255, g: 255, b: 255 };
+    
+    // Calculate contrast ratio for primary background with white text
+    const contrast = computeContrast(primaryRgb, whiteTextRgb);
     
     // WCAG AA requires >= 4.5:1 for normal text
     expect(contrast).toBeGreaterThanOrEqual(4.5);

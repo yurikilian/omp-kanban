@@ -83,6 +83,10 @@
   color: white;
 }
 
+[data-theme="dark"] .activity-rail-item.active {
+  color: var(--bg-primary);
+}
+
 .activity-rail-icon {
   display: flex;
   align-items: center;
@@ -104,26 +108,6 @@
   text-overflow: ellipsis;
 }
 
-.activity-rail-soon {
-  position: absolute;
-  bottom: -2px;
-  font-size: 0.4375rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--text-tertiary);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 5px;
-  padding: 0 0.15rem;
-  line-height: 1.25;
-}
-
-.activity-rail-item.active .activity-rail-soon {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: transparent;
-  color: rgba(255, 255, 255, 0.9);
-}
 
 /* E2-S3: Narrow viewport fallback to icon-only */
 @media (max-width: 1024px) {

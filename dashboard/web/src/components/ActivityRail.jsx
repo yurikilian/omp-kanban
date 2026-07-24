@@ -49,12 +49,11 @@ export default function ActivityRail({ active, onSelect }) {
           type="button"
           className={`activity-rail-item ${active === section.id ? 'active' : ''}`}
           aria-current={active === section.id ? 'page' : undefined}
-          title={section.soon ? `${section.label} (coming soon)` : section.label}
+          title={section.label}
           onClick={() => onSelect(section.id)}
         >
           <section.icon className="activity-rail-icon" aria-hidden="true" />
           {!isCollapsed && <span className="activity-rail-label">{section.label}</span>}
-          {section.soon && !isCollapsed && <span className="activity-rail-soon">Soon</span>}
         </button>
       ))}
     </nav>

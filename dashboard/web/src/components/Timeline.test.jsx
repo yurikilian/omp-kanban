@@ -402,6 +402,67 @@ describe('Timeline Component - Role Coloring', () => {
   });
 
   it('in dark mode role colors resolve to dark-token values and remain readable', () => {
+    // E3-S2-AC2: Verify that role colors in dark mode resolve to token values and meet WCAG AA contrast
+    const fs = require('fs');
+    const path = require('path');
+    const themeCssPath = path.join(__dirname, '../theme.css');
+    const themeCss = fs.readFileSync(themeCssPath, 'utf-8');
+    
+    // Extract dark-mode token values
+    const darkModeMatch = themeCss.match(/\[data-theme="dark"\]\s*\{([\s\S]*?)\}/);
+    expect(darkModeMatch).toBeTruthy();
+    const darkModeBlock = darkModeMatch[1];
+    
+    // Helper to extract hex color from dark mode block
+    const extractColor = (tokenName) => {
+      const match = darkModeBlock.match(new RegExp(`--${tokenName}\\s*:\\s*(#[0-9a-fA-F]{6})`));
+      return match ? match[1] : null;
+    };
+    
+    // Helper to parse hex to RGB
+    const hexToRGB = (hex) => ({
+      r: parseInt(hex.substring(1, 3), 16),
+      g: parseInt(hex.substring(3, 5), 16),
+      b: parseInt(hex.substring(5, 7), 16)
+    });
+    
+    // Helper to compute luminance and contrast
+    const getLuminance = ({ r, g, b }) => {
+      const [rs, gs, bs] = [r, g, b].map(x => {
+        const c = x / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+    };
+    
+    const computeContrast = (rgb1, rgb2) => {
+      const l1 = getLuminance(rgb1);
+      const l2 = getLuminance(rgb2);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+    
+    // Get dark mode colors
+    const darkBg = hexToRGB(extractColor('bg-primary')); // #0f0f0f
+    const darkTextPrimary = hexToRGB(extractColor('text-primary')); // #e8e8e8
+    
+    // Test each role color meets WCAG AA (4.5:1 for text)
+    const roleColors = {
+      primary: extractColor('primary'),      // user
+      neutral: extractColor('neutral'),      // assistant
+      warning: extractColor('warning'),      // tool
+      success: extractColor('success'),      // result
+      danger: extractColor('danger')         // error
+    };
+    
+    Object.entries(roleColors).forEach(([role, colorHex]) => {
+      if (colorHex) {
+        const rgb = hexToRGB(colorHex);
+        const contrast = computeContrast(rgb, darkBg);
+        expect(contrast).toBeGreaterThanOrEqual(4.5, `Dark mode ${role} token contrast against dark bg`);
+      }
+    });
+    
+    // Render in dark mode and verify classes are applied
     const timeline = {
       id: 'session-1',
       name: 'Session',
@@ -416,40 +477,24 @@ describe('Timeline Component - Role Coloring', () => {
         durationMs: 1000,
         count: 2,
         events: [
-          {
-            agent: 'main',
-            lane: 0,
-            role: 'user',
-            ts: '2026-07-21T14:00:00.000Z',
-            content: 'User msg'
-          },
-          {
-            agent: 'main',
-            lane: 0,
-            role: 'assistant',
-            ts: '2026-07-21T14:00:01.000Z',
-            content: 'Assistant msg'
-          }
+          { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: 'User msg' },
+          { agent: 'main', lane: 0, role: 'assistant', ts: '2026-07-21T14:00:01.000Z', content: 'Assistant msg' }
         ]
       }
     };
 
-    // Render in dark mode
     const { container } = render(<Timeline timeline={timeline} />);
     const root = container.closest('body')?.parentElement;
     if (root) {
       root.setAttribute('data-theme', 'dark');
     }
 
-    // Check that role-colored elements exist and have classes
+    // Verify role classes are applied
     const userTurn = screen.getByText('User msg').closest('.turn');
     expect(userTurn).toHaveClass('turn-role-user');
 
     const assistantTurn = screen.getByText('Assistant msg').closest('.turn');
     expect(assistantTurn).toHaveClass('turn-role-assistant');
-
-    // Verify CSS variables are being used (check computed styles would require setup)
-    // For now, verify that the classes are applied (the tokens are defined in theme.css)
   });
 });
 

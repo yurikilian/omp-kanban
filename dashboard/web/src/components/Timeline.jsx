@@ -52,6 +52,31 @@ function isToolStep(ev) {
 function isUserRole(role) {
   return role === 'user';
 }
+/**
+ * Maps an event role to a semantic token-based CSS class name.
+ * Each class is defined in Timeline.css with colors from semantic tokens (--primary, --neutral, --warning, --success, --danger).
+ */
+function roleToClassName(role, isError = false) {
+  if (isError) {
+    return 'turn-role-error';
+  }
+  switch (role) {
+    case 'user':
+      return 'turn-role-user';
+    case 'assistant':
+      return 'turn-role-assistant';
+    case 'system':
+      return 'turn-role-system';
+    case 'tool':
+    case 'tool_execution':
+      return 'turn-role-tool';
+    case 'tool_result':
+      return 'turn-role-tool-result';
+    default:
+      return '';
+  }
+}
+
 
 /**
  * Groups events into turn blocks.
@@ -147,10 +172,11 @@ function countNode(node) {
  */
 function ConversationTurn({ ev, refIso }) {
   const color = laneColor(ev.lane);
+  const roleClass = roleToClassName(ev.role, ev.isError);
   let turn;
   if (ev.role === 'user') {
     turn = (
-      <div className="turn turn-user">
+      <div className={`turn turn-user ${roleClass}`}>
         <div className="turn-head">
           <span className="turn-who">You</span>
           <span className="turn-time" title={ev.ts}>{formatRelative(ev.ts, refIso)}</span>
@@ -160,7 +186,7 @@ function ConversationTurn({ ev, refIso }) {
     );
   } else if (ev.role === 'assistant') {
     turn = (
-      <div className="turn turn-assistant" style={{ '--lane-color': color }}>
+      <div className={`turn turn-assistant ${roleClass}`} style={{ '--lane-color': color }}>
         <div className="turn-head">
           <span className="turn-who turn-agent" style={{ color }}>{ev.agent}</span>
           <span className="turn-time" title={ev.ts}>{formatRelative(ev.ts, refIso)}</span>
@@ -179,7 +205,7 @@ function ConversationTurn({ ev, refIso }) {
   } else if (isToolRole(ev.role)) {
     turn = <ToolStep ev={ev} />;
   } else if (ev.role === 'system') {
-    turn = <div className="turn turn-system">{ev.content}</div>;
+    turn = <div className={`turn turn-system ${roleClass}`}>{ev.content}</div>;
   } else {
     turn = null;
   }
@@ -200,6 +226,7 @@ function ConversationTurn({ ev, refIso }) {
 /** A compact, collapsible tool-call step within the conversation flow. */
 function ToolStep({ ev }) {
   const content = ev.resultContent ?? ev.content;
+  const roleClass = roleToClassName(ev.role, ev.isError);
   const title = (
     <span className="tool-step-head">
       <span className="tool-step-name">{toolIcon(ev)} {ev.toolName || ''}</span>
@@ -208,7 +235,7 @@ function ToolStep({ ev }) {
     </span>
   );
   return (
-    <div className={`timeline-row-wrap tool-step ${ev.isError ? 'timeline-row-error' : ''}`}>
+    <div className={`timeline-row-wrap tool-step ${roleClass} ${ev.isError ? 'timeline-row-error' : ''}`}>
       <Accordion title={title} nested>
         <ContentView toolName={ev.toolName} content={content} />
       </Accordion>
@@ -229,6 +256,9 @@ function TurnGroup({ group, refIso }) {
   const toolSteps = followingEvents.filter(isToolStep);
   const nonToolEvents = followingEvents.filter(ev => !isToolStep(ev));
 
+  // Extract children from tool steps (to render outside the collapsed tool-block)
+  const toolStepsWithChildren = toolSteps.flatMap(ev => ev.children || []);
+
   if (groupType === 'leading') {
     return (
       <div className="turn-group turn-group-leading">
@@ -246,6 +276,13 @@ function TurnGroup({ group, refIso }) {
         <div className="turn-group-following">
           {nonToolEvents.map((ev, idx) => (
             <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
+          ))}
+        </div>
+      )}
+      {toolStepsWithChildren.length > 0 && (
+        <div className="timeline-children">
+          {toolStepsWithChildren.map(child => (
+            <AgentSection key={child.agent} node={child} refIso={refIso} />
           ))}
         </div>
       )}

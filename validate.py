@@ -21,6 +21,8 @@ except ImportError:
 ROOT = Path(__file__).parent
 AGENTS = ROOT / "agents"
 SKILL = ROOT / "skills" / "kanban-cycle" / "SKILL.md"
+HOOKS = ROOT / "hooks"
+DASHBOARD = ROOT / "dashboard"
 
 # omp ships these; a same-named file silently overrides them.
 BUNDLED = {"explore", "plan", "designer", "reviewer",
@@ -156,6 +158,31 @@ def check_manifest():
                 f"will be silently ignored")
 
 
+def check_hooks():
+    """Hooks are optional. When present, omp loads hooks/{pre,post}/*.ts as
+    extension modules by their default export — so warn if one is missing it."""
+    if not HOOKS.is_dir():
+        return []
+    found = sorted(HOOKS.glob("*/*.ts"))
+    for path in found:
+        if "export default" not in path.read_text():
+            warnings.append(
+                f"{path.relative_to(ROOT)}: hook has no `export default` — omp "
+                f"loads hook modules by their default export, so this won't bind")
+    return [str(p.relative_to(ROOT)) for p in found]
+
+
+def check_dashboard():
+    """The vendored dashboard is optional. If present, its entry points must be
+    intact — node_modules and web/dist are built at install time, not required."""
+    if not DASHBOARD.is_dir():
+        return
+    for req in ("server/src/index.js", "package.json"):
+        if not (DASHBOARD / req).exists():
+            errors.append(
+                f"dashboard/: missing {req} — the vendored app looks incomplete")
+
+
 def main():
     quiet = "-q" in sys.argv
 
@@ -192,11 +219,18 @@ def main():
                 warnings.append(f"{unused} exists but the skill never references it")
 
     check_manifest()
+    hooks = check_hooks()
+    check_dashboard()
 
     if not quiet:
-        print(f"{'agent':<16}{'role':<10}{'returns'}")
+        w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h in hooks]) + 2
+        print(f"{'component':<{w0}}{'role':<10}{'returns'}")
         for name, model, ret in rows:
-            print(f"{name:<16}{model:<10}{ret}")
+            print(f"{name:<{w0}}{model:<10}{ret}")
+        for h in hooks:
+            print(f"{h:<{w0}}{'hook':<10}session_start")
+        if DASHBOARD.is_dir():
+            print(f"{'dashboard/':<{w0}}{'app':<10}vendored web app")
         print()
         for w in warnings:
             print(f"warning: {w}")

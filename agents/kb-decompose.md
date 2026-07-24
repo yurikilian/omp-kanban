@@ -7,7 +7,7 @@ spawns: []
 thinkingLevel: high
 output:
   type: object
-  required: [layers, task_count, ac_coverage_complete]
+  required: [layers, ac_coverage_complete]
   properties:
     layers:
       type: array
@@ -17,7 +17,6 @@ output:
           layer: { type: integer }
           parallel: { type: array, items: { type: string } }
           serial: { type: array, items: { type: string } }
-    task_count: { type: integer }
     ac_coverage_complete: { type: boolean }
     uncovered_ac: { type: array, items: { type: string } }
     conflict_notes: { type: array, items: { type: string } }

@@ -3,12 +3,14 @@
 #
 # Copies the kanban agents and skill into an omp discovery root.
 #
-#   ./install.sh              install for the current user (~/.omp/agent)
-#   ./install.sh --project    install into ./.omp for this repo only
-#   ./install.sh --uninstall  remove previously installed files
-#   ./install.sh --dry-run    show what would happen, change nothing
+#   ./install.sh                  install for the current user (~/.omp/agent)
+#   ./install.sh --project        install into ./.omp for this repo only
+#   ./install.sh --with-dashboard also install the session-start dashboard hook
+#                                 (vendored web app; runs npm install + build)
+#   ./install.sh --uninstall      remove previously installed files
+#   ./install.sh --dry-run        show what would happen, change nothing
 #
-# Combine flags freely, e.g. ./install.sh --project --dry-run
+# Combine flags freely, e.g. ./install.sh --project --with-dashboard --dry-run
 
 set -euo pipefail
 
@@ -16,14 +18,16 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCOPE="user"
 DRY=0
 UNINSTALL=0
+DASHBOARD=0
 
 for arg in "$@"; do
   case "$arg" in
     --project)   SCOPE="project" ;;
     --user)      SCOPE="user" ;;
+    --with-dashboard) DASHBOARD=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --dry-run|-n) DRY=1 ;;
-    -h|--help)   sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -36,6 +40,8 @@ fi
 
 AGENT_DIR="$ROOT/agents"
 SKILL_DIR="$ROOT/skills/kanban-cycle"
+HOOK_DIR="$ROOT/hooks/pre"
+DASHBOARD_DIR="$ROOT/dashboard"
 
 say()  { printf '%s\n' "$*"; }
 run()  { if [ "$DRY" -eq 1 ]; then say "  would: $*"; else "$@"; fi; }
@@ -52,7 +58,17 @@ if [ "$UNINSTALL" -eq 1 ]; then
     run rm -rf "$SKILL_DIR"
     say "  removed skills/kanban-cycle"
   fi
+  if [ -e "$HOOK_DIR/kb-dashboard.ts" ]; then
+    run rm -f "$HOOK_DIR/kb-dashboard.ts"
+    say "  removed hooks/pre/kb-dashboard.ts"
+  fi
+  if [ -d "$DASHBOARD_DIR" ]; then
+    run rm -rf "$DASHBOARD_DIR"
+    say "  removed dashboard/"
+  fi
   say "Done. Run /agents in omp and press Ctrl+R to reload."
+  say "Note: the dashboard's runtime state (~/.omp/agent/dashboard/, incl."
+  say "dashboard.db) is left in place — remove it by hand if you want it gone."
   exit 0
 fi
 
@@ -98,8 +114,39 @@ done
 run cp "$SRC/skills/kanban-cycle/SKILL.md" "$SKILL_DIR/SKILL.md"
 say "  skills/kanban-cycle/SKILL.md"
 
+# ------------------------------------------------------------- dashboard (opt-in)
+if [ "$DASHBOARD" -eq 1 ]; then
+  say ""
+  say "Installing sessions dashboard (this runs npm install + build)…"
+  run mkdir -p "$HOOK_DIR"
+  run cp "$SRC/hooks/pre/kb-dashboard.ts" "$HOOK_DIR/kb-dashboard.ts"
+  say "  hooks/pre/kb-dashboard.ts"
+
+  # Copy the vendored app, minus anything build-time.
+  run rm -rf "$DASHBOARD_DIR"
+  run mkdir -p "$DASHBOARD_DIR"
+  run rsync -a --exclude node_modules --exclude 'web/dist' --exclude '.DS_Store' \
+    "$SRC/dashboard/" "$DASHBOARD_DIR/"
+  say "  dashboard/"
+
+  if [ "$DRY" -eq 0 ]; then
+    say ""
+    say "  building — installing server deps (compiles better-sqlite3)…"
+    npm --prefix "$DASHBOARD_DIR/server" install
+    say "  installing + building web UI…"
+    npm --prefix "$DASHBOARD_DIR/web" install
+    npm --prefix "$DASHBOARD_DIR/web" run build
+  else
+    say "  would: npm install (server, web) + npm run build (web)"
+  fi
+fi
+
 say ""
-say "Installed 10 agents and 1 skill."
+if [ "$DASHBOARD" -eq 1 ]; then
+  say "Installed 10 agents, 1 skill, and the session-start dashboard hook."
+else
+  say "Installed 10 agents and 1 skill."
+fi
 say ""
 say "Next:"
 say "  1. omp -p '/agents'     — confirm the 10 kb-* agents resolved,"
@@ -108,6 +155,15 @@ say "  2. omp -p '/extensions' — confirm the kanban-cycle skill loaded."
 say "  3. Ctrl+R inside /agents reloads from disk after an edit."
 say "  4. Add .kanban/ to your .gitignore — cycle artifacts live there."
 say ""
+if [ "$DASHBOARD" -eq 1 ]; then
+  say "Dashboard:"
+  say "  It launches automatically on the next omp session start, on a random free"
+  say "  port, as a single shared daemon across all sessions. The URL is printed"
+  say "  into the session; state lives in ~/.omp/agent/dashboard/state.json."
+  say "  Set OMP_KANBAN_DASHBOARD_OPEN=1 to also open a browser tab on fresh start."
+  say "  Stop it with: kill \$(python3 -c \"import json;print(json.load(open('$HOME/.omp/agent/dashboard/state.json'))['pid'])\")"
+  say ""
+fi
 say "Smoke test (cheap, no code written):"
 say "  Ask omp: \"use the kanban-cycle skill to plan a fix for <small issue>\""
 say "  It should dispatch kb-intake and stop for your confirmation before planning."

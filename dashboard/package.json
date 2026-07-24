@@ -1,0 +1,16 @@
+{
+  "name": "omp-sessions-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,web \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix server run start",
+    "test": "concurrently -n server-test,web-test \"npm --prefix server run test\" \"npm --prefix web run test\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

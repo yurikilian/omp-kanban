@@ -9,19 +9,29 @@ this repo contradicts this one, this one is right and the other should be fixed.
 definitions and one skill that together run a kanban development lifecycle:
 intake → planning → decomposition → parallel TDD → two-agent review → QA → PR.
 
-**This repository contains no application code.** Everything here is either a
-Markdown definition that becomes an agent's system prompt, or tooling that
-installs and validates those definitions. There is nothing to compile, no
-runtime, no tests of the usual kind. The "source code" is prose, and it is read
-by a model rather than a compiler — which changes what "correct" means, as
-described under [Editing agent definitions](#editing-agent-definitions).
+**The lifecycle is prose, not application code.** The agents and skill are
+Markdown definitions that become system prompts, plus tooling that installs and
+validates them. There is nothing to compile in that core, no runtime, no tests of
+the usual kind. The "source code" is prose, read by a model rather than a
+compiler — which changes what "correct" means, as described under
+[Editing agent definitions](#editing-agent-definitions).
+
+**The one exception is `dashboard/`** — a vendored web app (Express server + React
+UI) that reads `~/.omp/agent/sessions/` and shows session timelines, KPIs, and
+plans. It is optional and opt-in: `./install.sh --with-dashboard` installs it and
+a `session_start` hook that launches it. Nothing about the agents or skill depends
+on it. See [Hooks and the dashboard](#hooks-and-the-dashboard).
 
 ## Layout
 
 ```
 agents/               ten subagent definitions, one file per agent
 skills/kanban-cycle/  SKILL.md — the orchestrator
+hooks/pre/            session_start hook that launches the dashboard (opt-in)
+dashboard/            vendored web app (Express + React); built at install time
+docs/                 kanban-flow.dot + rendered kanban-flow.png (README diagram)
 install.sh            copies definitions into an omp discovery root
+uninstall.sh          thin wrapper over `install.sh --uninstall`
 validate.py           schema validation; run before every commit
 package.json          omp extension manifest
 .github/workflows/    CI: validate + installer smoke test
@@ -59,6 +69,11 @@ for that reason.
 **Skill discovery is non-recursive** — exactly one directory deep under
 `skills/`. `skills/kanban-cycle/SKILL.md` is found; `skills/team/kanban/SKILL.md`
 is not.
+
+**Hooks are discovered by directory too**, not by the `omp.hooks` manifest key
+(that key resolves but is unwired — see below). `hooks/pre/*.ts` and
+`hooks/post/*.ts` are loaded as extension modules; each default-exports a factory
+that receives `HookAPI` and subscribes to lifecycle events with `pi.on(...)`.
 
 ## Agent frontmatter
 
@@ -107,6 +122,46 @@ review. Everything mechanical is `smol`. **Do not upgrade a role without a
 reason you can state**; this is the largest cost lever in the system, and the
 person running it is budget-constrained.
 
+## Hooks and the dashboard
+
+`hooks/pre/kb-dashboard.ts` is a `session_start` hook that launches the vendored
+`dashboard/` app. It is not part of the board — it is infrastructure that happens
+to ship alongside it, installed only with `./install.sh --with-dashboard`.
+
+**The hook is a cross-session singleton launcher.** Its whole job is to guarantee
+*one* dashboard across every omp session, never one-per-session:
+
+- Shared state lives at `~/.omp/agent/dashboard/` — `state.json` (`{port, pid,
+  startedAt}`) names the running daemon; `.lock` (a directory, created with atomic
+  `mkdir`) guards two sessions racing to start it at the same instant.
+- On `session_start` it checks liveness (recorded pid alive **and** `/health`
+  answers). Live → reuse and print the URL. Not live → acquire the lock, pick a
+  **random free port** (bind `:0`, read the assigned port), spawn the server
+  **detached + `unref()`** so it outlives the session, publish `state.json`, print
+  the URL.
+- Everything is wrapped and time-boxed: a launcher failure must never block or
+  break session start. If the dashboard was not installed (`--with-dashboard`
+  skipped), the hook detects the missing build and silently no-ops.
+
+**Consequences worth knowing.** The daemon is deliberately not tied to a session's
+lifetime — it keeps running after the session ends; stop it via the pid in
+`state.json`. Because it is a single shared process, it reflects one working
+directory (the session that launched it) as "current" in `/api/projects`; the UI
+lists every project regardless, so that is only a default, not a limitation.
+`OMP_KANBAN_DASHBOARD_OPEN=1` additionally opens a browser tab on fresh start.
+
+**`dashboard/` is vendored, built at install.** `node_modules/` and `web/dist/`
+are git-ignored and produced by `--with-dashboard` (`npm install` in `server/` and
+`web/`, then `npm run build`). The server has a native dependency
+(`better-sqlite3`), which is why the dashboard is opt-in rather than part of the
+light Markdown install. It persists to `~/.omp/agent/dashboard.db` and reads
+`~/.omp/agent/sessions/` — both outside this repo.
+
+**Not yet exercised against a live omp.** Three things to confirm on a real
+install: the exact hook directory (`pre/` vs `post/` for `session_start`), that
+omp's TS hook runtime exposes Node builtins and `import.meta.url`, and that
+`pi.sendMessage`/`ctx` match `docs/hooks.md` for the installed omp version.
+
 ## Editing agent definitions
 
 The body of each file becomes a system prompt verbatim. That has consequences
@@ -124,6 +179,12 @@ that do not apply to ordinary code:
 - **Keep handoff fields consistent.** One agent's `output` schema is the next
   agent's input. Changing a field name means changing it in the producer, every
   consumer, and the skill. `validate.py` does not catch this — check by hand.
+- **Keep output schemas lean.** Every required field is bookkeeping the model must
+  produce on every run. Do not require a field the orchestrator can derive itself —
+  especially counts (Anthropic's *Building Effective Agents* names "having to keep
+  an accurate count" as ACI overhead to eliminate). `task_count` was dropped from
+  `kb-decompose` for this reason (the orchestrator counts `layers`), and
+  `suite_result` was made optional in `kb-dev` (`status` already signals green).
 
 ## Before committing
 
@@ -163,13 +224,23 @@ accident is not.
 challenges them over IRC, then reconciles *and applies the fixes*. An earlier
 design had a separate arbiter. Collapsing it removes an agent and a round-trip.
 
-The cost: nobody reviews the critic's fixes. `kb-critic` has guards — form an
-independent view before reading the findings, fix only what survived
-reconciliation, write the failing test first, escalate rather than let a fix grow
-— and the skill tells the orchestrator to flag it if `fixes_applied` reaches well
-past the findings that motivated them. It is a real trade, not a free win. If you
-want the independent arbiter back, split `kb-critic` in two; the verdict schema
-already carries what a separate fixer would need.
+The risk this creates: the critic both rules on findings and fixes them, so its
+fixes could ship unreviewed. Rather than reintroduce a third agent, the reviewer —
+already live on the channel — verifies the critic's fixes in one closing round
+before the verdict is final, checking each fix resolves its finding and did not
+reach past it. The outcome is recorded in `reviewer_signoff`
+(`confirmed`/`objected`/`unavailable`), which the orchestrator gates on. This
+restores the independent check that evaluator-optimizer designs need (see
+Anthropic's *Building Effective Agents*) without a third agent or a round-trip
+back to a developer.
+
+`kb-critic` keeps its own guards too — form an independent view before reading the
+findings, fix only what survived reconciliation, write the failing test first,
+escalate rather than let a fix grow. It is still a real trade: the sign-off is one
+round, not a full second review, so the skill also flags `fixes_applied` reaching
+well past the findings that motivated them. If you want a fully independent
+arbiter back, split `kb-critic` in two; the verdict schema already carries what a
+separate fixer would need.
 
 **`parallel_safe` is not a WIP limit.** omp owns concurrency and worktree
 isolation. `parallel_safe` marks tasks whose `files_touched` overlap a sibling or
@@ -198,5 +269,8 @@ behavior or delete it.
   already happened; the value is entirely in changes it prompts. `kb-retro` is
   instructed to say this and to skip trivial cycles.
 - **The full cycle is wrong for small work.** Eight agents on a one-line fix
-  costs more than the fix. The skill offers a reduced cycle; that offer is a
-  feature, not a fallback.
+  costs more than the fix. The skill picks a track at intake (`state.json.track`):
+  the full board for specs and high-risk issues, a reduced track (decompose → dev →
+  review pair → release, QA only when an AC needs e2e) as the default for low-risk
+  issues. Escalating to the full board is the explicit choice; defaulting to fewer
+  agents is the safe one.

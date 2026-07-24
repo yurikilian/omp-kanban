@@ -34,9 +34,17 @@ jobs:
           test -f .omp/agents/kb-critic.md
           test -f .omp/skills/kanban-cycle/SKILL.md
           test -f .omp/skills/cost-forensics/SKILL.md
+          test -f .omp/skills/rendered-geometry-tests/SKILL.md
           test "$(ls .omp/agents/*.md | wc -l)" -eq 10
-          test "$(ls -d .omp/skills/*/ | wc -l)" -eq 2
+          test "$(ls -d .omp/skills/*/ | wc -l)" -eq 3
+          # Board hooks install without --with-dashboard; the dashboard hook does not.
+          test -f .omp/hooks/pre/kb-geometry-guard.ts
+          test -f .omp/hooks/post/kb-qa-coverage.ts
+          test ! -f .omp/hooks/pre/kb-dashboard.ts
           ./uninstall.sh --project
           test ! -d .omp/skills/kanban-cycle
           test ! -d .omp/skills/cost-forensics
+          test ! -d .omp/skills/rendered-geometry-tests
+          test ! -f .omp/hooks/pre/kb-geometry-guard.ts
+          test ! -f .omp/hooks/post/kb-qa-coverage.ts
           test ! -f .omp/agents/kb-critic.md

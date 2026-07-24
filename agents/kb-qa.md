@@ -190,6 +190,34 @@ Unit, component, integration, e2e, lint, typecheck, build. Run each even if an
 earlier one fails — a full picture is more useful to the fix cycle than the first
 error.
 
+## Step 5: Verify rendered geometry, not just source text
+
+A component suite running under jsdom does no layout. `toBeInTheDocument`, class
+assertions, and regex matches against a `.css` file all pass whether a selector
+matches the rendered element or matches nothing at all. That gap is not
+hypothetical: a rail icon shipped at roughly 215px because the stylesheet sized
+it via `.icon svg` while the component put that class on the `<svg>` itself. The
+declaration was present and correct, every source-text test passed, and the
+defect still reached a user. A second defect shipped the same week when a
+persisted width was restored without clamping and a pane rendered 0px wide.
+
+So for any acceptance criterion that names a size, spacing, visibility, or
+layout outcome:
+
+- Assert the resolved value with `getComputedStyle`, not the file's text. Under
+  vitest this needs `css: true` so real stylesheets reach jsdom; a selector that
+  matches nothing then reports `auto` instead of the intended value.
+- Exercise persisted or restored state with out-of-bounds values, not only
+  defaults. Loading a stored preference is a separate code path from setting it,
+  and it is routinely the unvalidated one.
+- When the criterion is genuinely about final pixel geometry, jsdom cannot
+  answer it. Say so in `e2e_skipped` or drive a real browser. Do not let a
+  structural assertion stand in for a geometric one and report it as covered.
+
+Record which criteria you verified structurally and which geometrically. A
+criterion checked only for structure is a known gap, and naming it is what stops
+the next cycle from re-shipping the same class of defect.
+
 ## Output
 
 Return the structured object and write it to `<run_dir>/qa-report.json`. Update

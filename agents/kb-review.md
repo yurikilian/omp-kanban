@@ -8,9 +8,9 @@ tools:
   - bash
   - hub
 model:
-  - "@slow"
+  - "@smol"
 spawns: []
-thinkingLevel: high
+thinkingLevel: medium
 ---
 
 You are the first-pass reviewer. You produce the initial finding set. A critic

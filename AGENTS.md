@@ -6,10 +6,12 @@ this repo contradicts this one, this one is right and the other should be fixed.
 ## What this repository is
 
 `omp-kanban` is an [omp](https://omp.sh) extension. It ships ten subagent
-definitions and two skills. `kanban-cycle` runs the development lifecycle —
+definitions and three skills. `kanban-cycle` runs the development lifecycle —
 intake → planning → decomposition → parallel TDD → two-agent review → QA → PR —
-and `cost-forensics` is an off-board self-improvement pass that audits session
-spend and proposes hook/skill/agent changes to prevent recurring waste.
+`cost-forensics` is an off-board self-improvement pass that audits session
+spend and proposes hook/skill/agent changes to prevent recurring waste, and
+`rendered-geometry-tests` encodes how to assert resolved CSS instead of source
+text, after a defect shipped past a green suite for exactly that reason.
 
 **The lifecycle is prose, not application code.** The agents and skill are
 Markdown definitions that become system prompts, plus tooling that installs and
@@ -30,7 +32,10 @@ on it. See [Hooks and the dashboard](#hooks-and-the-dashboard).
 agents/               ten subagent definitions, one file per agent
 skills/kanban-cycle/  SKILL.md — the lifecycle orchestrator
 skills/cost-forensics/ SKILL.md — off-board spend audit + self-improvement pass
-hooks/pre/            session_start hook that launches the dashboard (opt-in)
+skills/rendered-geometry-tests/ SKILL.md — assert resolved CSS, not source text
+hooks/pre/            session_start hooks: dashboard launcher (opt-in),
+                      geometry-guard advisory (base install)
+hooks/post/           tool_result hook: flags QA reports with uncovered gaps
 dashboard/            vendored web app (Express + React); built at install time
 docs/                 kanban-flow.dot + rendered kanban-flow.png (README diagram)
 install.sh            copies definitions into an omp discovery root
@@ -122,20 +127,46 @@ produces unpredictable returns.
 | `kb-planner` | `@slow` | prose | epics, stories, acceptance criteria |
 | `kb-decompose` | `@slow` | json | tasks, file claims, dependency layers |
 | `kb-dev` | `@default` | json | one task, strict red-green-refactor |
-| `kb-review` | `@slow` | prose | first-pass findings |
+| `kb-review` | `@smol` | prose | first-pass findings |
 | `kb-critic` | `@default` | json | challenge, reconcile, apply fixes |
 | `kb-qa` | `@default` | json | full suite, e2e, Playwright scaffold |
 | `kb-release` | `@smol` | json | merge, release notes, PR |
 | `kb-retro` | `@smol` | prose | post-cycle waste audit |
 | `kb-forensics` | `@smol` | prose | session cost audit (off-board) |
 
-Roles are deliberate. `@slow` is reserved for the three places where a wrong call
-compounds across the whole cycle — planning, decomposition, and first-pass
-review. Everything mechanical is `@smol`. **Do not upgrade a role without a
-reason you can state**; this is the largest cost lever in the system, and the
-person running it is budget-constrained.
+Roles are deliberate. `@slow` is reserved for the two places where a wrong call
+compounds across the whole cycle — planning and decomposition. Everything
+mechanical is `@smol`. **Do not change a role without a reason you can state**;
+this is the largest cost lever in the system, and the person running it is
+budget-constrained.
+
+`kb-review` was `@slow` until a cost audit measured it: it spent 25.6% of one
+cycle's budget and caught none of the three defects that reached the user. The
+two it could plausibly have caught were a non-matching CSS selector and an
+unvalidated restored preference — both invisible to reading code and visible
+only to a resolved-style or out-of-bounds assertion. That is a tooling gap, not
+a reasoning-depth gap, so the fix was to close the gap (see
+`skills/rendered-geometry-tests` and kb-qa's Step 5) and stop paying `@slow`
+rates for it. Watch for the failure mode this could introduce: review conceding
+findings it should defend, or missing subtle cross-file reasoning. If that shows
+up, the honest response is to restore `@slow` and say why, not to bolt on
+another agent.
 
 ## Hooks and the dashboard
+
+Two **board hooks** ship with the base install, both advisory — they only read
+the working tree and print, never block. `hooks/pre/kb-geometry-guard.ts`
+(`session_start`) warns when a project has component tests and stylesheets but
+its vitest config lacks `css: true`, the exact condition under which style
+assertions are inert. `hooks/post/kb-qa-coverage.ts` (`tool_result`, filtered to
+a write of `qa-report.json`) flags a passing QA report that records no
+rendered-geometry or restored-state verification.
+
+Note the second one binds `tool_result`, not a `qa_complete` event — no such
+event exists. The real surfaces are `session_*`, `agent_*`, `turn_*`, `context`,
+`tool_call`, and `tool_result`; a hook bound to an invented name loads without
+error and silently never fires, which is the same class of bug as the unwired
+`omp.hooks` manifest key below.
 
 `hooks/pre/kb-dashboard.ts` is a `session_start` hook that launches the vendored
 `dashboard/` app. It is not part of the board — it is infrastructure that happens

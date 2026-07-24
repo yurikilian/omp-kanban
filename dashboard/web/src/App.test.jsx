@@ -496,3 +496,64 @@ describe('Theme System', () => {
     mockLocalStorage.clear();
   });
 });
+
+// Persisted-preference edge cases.
+//
+// A stored `sidebarWidth` was applied verbatim on load while only the drag
+// handler clamped to 25-40% of the viewport. A saved 860px on a 1365px viewport
+// therefore consumed the layout and the session-detail pane rendered 0px wide —
+// the entire transcript was invisible. Every existing test passed, because they
+// all exercised the default width and never a persisted out-of-bounds one.
+//
+// The contract: a width restored from the server is clamped to the same bounds
+// the drag handler enforces, so a bad stored value can never hide the content.
+describe('App persisted sidebar width', () => {
+  const VIEWPORT = 1365;
+  const MIN = VIEWPORT * 0.25;
+  const MAX = VIEWPORT * 0.4;
+
+  const renderWithStoredWidth = async (sidebarWidth) => {
+    window.innerWidth = VIEWPORT;
+    fetch.mockImplementation((url) => {
+      if (url === '/api/preferences') {
+        return Promise.resolve({ ok: true, json: async () => ({ sidebarWidth }) });
+      }
+      if (typeof url === 'string' && url.includes('/timeline')) {
+        return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
+      }
+      if (url === '/api/plans') {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('.sidebar')).toBeTruthy();
+    }, { timeout: 3000 });
+    return container.querySelector('.sidebar');
+  };
+
+  it('clamps an oversized stored width so the content pane keeps room', async () => {
+    const sidebar = await renderWithStoredWidth(860);
+    await waitFor(() => {
+      expect(parseFloat(sidebar.style.width)).toBeLessThanOrEqual(MAX);
+    }, { timeout: 3000 });
+    expect(parseFloat(sidebar.style.width)).toBeGreaterThanOrEqual(MIN);
+  });
+
+  it('clamps an undersized stored width up to the minimum', async () => {
+    const sidebar = await renderWithStoredWidth(10);
+    await waitFor(() => {
+      expect(parseFloat(sidebar.style.width)).toBeGreaterThanOrEqual(MIN);
+    }, { timeout: 3000 });
+  });
+
+  it('honors an in-bounds stored width unchanged', async () => {
+    const inBounds = Math.round(VIEWPORT * 0.3);
+    const sidebar = await renderWithStoredWidth(inBounds);
+    await waitFor(() => {
+      expect(parseFloat(sidebar.style.width)).toBe(inBounds);
+    }, { timeout: 3000 });
+  });
+});

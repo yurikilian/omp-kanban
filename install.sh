@@ -41,6 +41,7 @@ fi
 AGENT_DIR="$ROOT/agents"
 SKILLS_DIR="$ROOT/skills"
 HOOK_DIR="$ROOT/hooks/pre"
+POST_HOOK_DIR="$ROOT/hooks/post"
 DASHBOARD_DIR="$ROOT/dashboard"
 
 say()  { printf '%s\n' "$*"; }
@@ -51,6 +52,12 @@ AGENTS=$(cd "$SRC/agents" && ls kb-*.md)
 SKILLS=$(cd "$SRC/skills" && for d in */; do [ -f "$d/SKILL.md" ] && printf '%s\n' "${d%/}"; done)
 AGENT_COUNT=$(printf '%s\n' "$AGENTS" | grep -c .)
 SKILL_COUNT=$(printf '%s\n' "$SKILLS" | grep -c .)
+# Hooks are discovered too. kb-dashboard.ts is held out: it needs the vendored
+# app and so installs only with --with-dashboard, while the board-quality hooks
+# below carry no such dependency and ship with the base install.
+DASHBOARD_HOOK="kb-dashboard.ts"
+PRE_HOOKS=$(cd "$SRC/hooks/pre" 2>/dev/null && ls *.ts 2>/dev/null | grep -v "^${DASHBOARD_HOOK}$" || true)
+POST_HOOKS=$(cd "$SRC/hooks/post" 2>/dev/null && ls *.ts 2>/dev/null || true)
 
 # ---------------------------------------------------------------- uninstall
 if [ "$UNINSTALL" -eq 1 ]; then
@@ -64,10 +71,19 @@ if [ "$UNINSTALL" -eq 1 ]; then
       say "  removed skills/$s"
     fi
   done
-  if [ -e "$HOOK_DIR/kb-dashboard.ts" ]; then
-    run rm -f "$HOOK_DIR/kb-dashboard.ts"
-    say "  removed hooks/pre/kb-dashboard.ts"
-  fi
+  # Board hooks (discovered); kb-dashboard.ts is removed with the dashboard below.
+  for h in $PRE_HOOKS $DASHBOARD_HOOK; do
+    if [ -e "$HOOK_DIR/$h" ]; then
+      run rm -f "$HOOK_DIR/$h"
+      say "  removed hooks/pre/$h"
+    fi
+  done
+  for h in $POST_HOOKS; do
+    if [ -e "$POST_HOOK_DIR/$h" ]; then
+      run rm -f "$POST_HOOK_DIR/$h"
+      say "  removed hooks/post/$h"
+    fi
+  done
   if [ -d "$DASHBOARD_DIR" ]; then
     run rm -rf "$DASHBOARD_DIR"
     say "  removed dashboard/"
@@ -122,6 +138,21 @@ for s in $SKILLS; do
   run cp "$SRC/skills/$s/SKILL.md" "$SKILLS_DIR/$s/SKILL.md"
   say "  skills/$s/SKILL.md"
 done
+
+# Board hooks ship with the base install — they only read the working tree and
+# print advisories, so they carry none of the dashboard's build dependencies.
+if [ -n "$PRE_HOOKS" ] || [ -n "$POST_HOOKS" ]; then
+  [ -n "$PRE_HOOKS" ] && run mkdir -p "$HOOK_DIR"
+  for h in $PRE_HOOKS; do
+    run cp "$SRC/hooks/pre/$h" "$HOOK_DIR/$h"
+    say "  hooks/pre/$h"
+  done
+  [ -n "$POST_HOOKS" ] && run mkdir -p "$POST_HOOK_DIR"
+  for h in $POST_HOOKS; do
+    run cp "$SRC/hooks/post/$h" "$POST_HOOK_DIR/$h"
+    say "  hooks/post/$h"
+  done
+fi
 
 # ------------------------------------------------------------- dashboard (opt-in)
 if [ "$DASHBOARD" -eq 1 ]; then

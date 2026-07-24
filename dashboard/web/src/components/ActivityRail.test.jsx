@@ -367,3 +367,48 @@ describe('Narrow Viewport Fallback to Icon-Only (E2-S3)', () => {
     });
   });
 });
+
+// Rendered-geometry guards.
+//
+// These exist because a source-text assertion cannot tell a selector that
+// MATCHES from one that matches NOTHING. `ActivityRail.css` once sized icons
+// via `.activity-rail-icon svg { width: 1.25rem }`, but heroicons apply
+// `className` straight to the <svg>, so there was no descendant to match. The
+// declaration was present and correct in the file — every source-text test
+// passed — while the icons rendered ~215px because a viewBox-only svg with no
+// width stretches to fill its flex parent.
+//
+// `getComputedStyle` resolves the real cascade (vitest runs with `css: true`),
+// so a selector that matches nothing reports `auto` and these fail. jsdom does
+// no layout, so this checks the applied value, not the final pixel box — that
+// is sufficient: the defect was "no width applied at all".
+describe('ActivityRail rendered geometry', () => {
+  it('sizes the section icons from the stylesheet rather than letting them stretch', () => {
+    render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+    const icons = document.querySelectorAll('svg.activity-rail-icon');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => {
+      const { width, height } = getComputedStyle(icon);
+      expect(width).toBe('1.25rem');
+      expect(height).toBe('1.25rem');
+      expect(width).not.toBe('auto');
+    });
+  });
+
+  it('sizes the collapse-toggle icon from the stylesheet', () => {
+    render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+    const toggle = document.querySelector('svg.activity-rail-toggle-icon');
+    expect(toggle).toBeTruthy();
+    expect(getComputedStyle(toggle).width).toBe('1.25rem');
+    expect(getComputedStyle(toggle).height).toBe('1.25rem');
+  });
+
+  // Guards the contract the original defect violated: heroicons put `className`
+  // on the <svg> itself. If a wrapper is ever introduced, the sizing rules must
+  // move with it, and this fails loudly instead of silently unsizing the icon.
+  it('applies icon classes to the svg element itself, not a wrapper', () => {
+    render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+    expect(document.querySelector('svg.activity-rail-icon')).toBeTruthy();
+    expect(document.querySelector('svg.activity-rail-toggle-icon')).toBeTruthy();
+  });
+});

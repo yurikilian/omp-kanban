@@ -186,18 +186,47 @@ def check_manifest():
                 f"will be silently ignored")
 
 
+# omp's documented hook event surfaces. A hook bound to anything else loads
+# without error and silently never fires — the same silent-failure class as the
+# unwired `omp.hooks` manifest key, so it is worth catching here.
+HOOK_EVENTS = {
+    "session_start", "session_before_switch", "session_switch",
+    "session_before_branch", "session_branch", "session_before_compact",
+    "session.compacting", "session_compact", "session_before_tree",
+    "session_tree", "session_shutdown",
+    "context", "before_agent_start", "agent_start", "agent_end",
+    "turn_start", "turn_end", "auto_compaction_start", "auto_compaction_end",
+    "auto_retry_start", "auto_retry_end", "ttsr_triggered", "todo_reminder",
+    "tool_call", "tool_result",
+}
+
+
 def check_hooks():
     """Hooks are optional. When present, omp loads hooks/{pre,post}/*.ts as
-    extension modules by their default export — so warn if one is missing it."""
+    extension modules by their default export — so warn if one is missing it,
+    and report which events each one actually binds."""
     if not HOOKS.is_dir():
         return []
     found = sorted(HOOKS.glob("*/*.ts"))
+    result = []
     for path in found:
-        if "export default" not in path.read_text():
+        source = path.read_text()
+        rel = str(path.relative_to(ROOT))
+        if "export default" not in source:
             warnings.append(
-                f"{path.relative_to(ROOT)}: hook has no `export default` — omp "
+                f"{rel}: hook has no `export default` — omp "
                 f"loads hook modules by their default export, so this won't bind")
-    return [str(p.relative_to(ROOT)) for p in found]
+        events = re.findall(r"""pi\.on\(\s*["']([^"']+)["']""", source)
+        for event in events:
+            if event not in HOOK_EVENTS:
+                errors.append(
+                    f"{rel}: binds unknown event '{event}' — it would load "
+                    f"cleanly and never fire. Known events: "
+                    f"{', '.join(sorted(HOOK_EVENTS))}")
+        if not events:
+            warnings.append(f"{rel}: registers no `pi.on(...)` handler")
+        result.append((rel, ",".join(dict.fromkeys(events)) or "—"))
+    return result
 
 
 def check_dashboard():
@@ -263,12 +292,12 @@ def main():
     check_dashboard()
 
     if not quiet:
-        w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h in hooks]) + 2
+        w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h, _ in hooks]) + 2
         print(f"{'component':<{w0}}{'role':<10}{'returns'}")
         for name, model, ret in rows:
             print(f"{name:<{w0}}{model:<10}{ret}")
-        for h in hooks:
-            print(f"{h:<{w0}}{'hook':<10}session_start")
+        for h, events in hooks:
+            print(f"{h:<{w0}}{'hook':<10}{events}")
         if DASHBOARD.is_dir():
             print(f"{'dashboard/':<{w0}}{'app':<10}vendored web app")
         print()

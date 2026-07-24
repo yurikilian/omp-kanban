@@ -298,9 +298,11 @@ function TurnGroup({ group, refIso }) {
           </button>
           {isToolBlockExpanded && (
             <div className="tool-block-content">
-              {toolSteps.map((ev, idx) => (
-                <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={ev} refIso={refIso} />
-              ))}
+              {toolSteps.map((ev, idx) => {
+                // Create a copy without children to avoid rendering them twice
+                const evWithoutChildren = { ...ev, children: undefined };
+                return <ConversationTurn key={`${userEvent.ts}-${ev.ts}-${idx}`} ev={evWithoutChildren} refIso={refIso} />;
+              })}
             </div>
           )}
         </div>

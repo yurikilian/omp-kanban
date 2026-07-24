@@ -6,8 +6,10 @@ this repo contradicts this one, this one is right and the other should be fixed.
 ## What this repository is
 
 `omp-kanban` is an [omp](https://omp.sh) extension. It ships ten subagent
-definitions and one skill that together run a kanban development lifecycle:
-intake → planning → decomposition → parallel TDD → two-agent review → QA → PR.
+definitions and two skills. `kanban-cycle` runs the development lifecycle —
+intake → planning → decomposition → parallel TDD → two-agent review → QA → PR —
+and `cost-forensics` is an off-board self-improvement pass that audits session
+spend and proposes hook/skill/agent changes to prevent recurring waste.
 
 **The lifecycle is prose, not application code.** The agents and skill are
 Markdown definitions that become system prompts, plus tooling that installs and
@@ -26,7 +28,8 @@ on it. See [Hooks and the dashboard](#hooks-and-the-dashboard).
 
 ```
 agents/               ten subagent definitions, one file per agent
-skills/kanban-cycle/  SKILL.md — the orchestrator
+skills/kanban-cycle/  SKILL.md — the lifecycle orchestrator
+skills/cost-forensics/ SKILL.md — off-board spend audit + self-improvement pass
 hooks/pre/            session_start hook that launches the dashboard (opt-in)
 dashboard/            vendored web app (Express + React); built at install time
 docs/                 kanban-flow.dot + rendered kanban-flow.png (README diagram)
@@ -79,22 +82,32 @@ that receives `HookAPI` and subscribes to lifecycle events with `pi.on(...)`.
 
 Required: `name`, `description`. Everything else inherits from the parent session.
 
+The schema below is taken from omp's own bundled agents in `~/.omp/agent/agents/`
+(designer, librarian, reviewer, scout, sonic, task) — they are the ground truth
+for the format, not this doc.
+
 | Field | Notes |
 |---|---|
 | `name` | Must match the filename. omp resolves by this field, not the file. |
 | `description` | What the parent reads when deciding whether to dispatch. |
-| `tools` | CSV or list. Restricts the child. `yield` is always added. |
-| `model` | A **role**, not a model name: `smol`, `default`, `slow`, `plan`, `commit`. |
-| `spawns` | Which agents this child may spawn. Defaults to none. |
-| `thinkingLevel` | `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
-| `output` | JSON schema for structured returns. **Conflicts with prose return instructions — pick one.** |
+| `tools` | YAML list of omp tool names: `read`, `write`, `edit`, `grep`, `glob`, `bash`, `lsp`, `web_search`, `ast_grep`, `yield`, `hub`. Restricts the child. Names like `search`, `find`, `irc`, `github` do **not** exist and fail silently. |
+| `model` | A **list** of **roles**, each carrying an `@` sigil: `@smol`, `@default`, `@slow`, `@fast`, `@task`, `@designer`. Not a bare name, not a model id. |
+| `spawns` | Which agents this child may spawn (list, or `"*"`). Defaults to none. |
+| `thinkingLevel` | `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `auto` |
+| `output` | omp's **properties/optionalProperties DSL**, not JSON Schema. Each field carries `metadata.description`; scalars are `string`/`number`/`boolean`; `enum` lists choices; `elements` describes array items; required fields go under `properties`, the rest under `optionalProperties`. No top-level `type: object`/`required`. **Conflicts with prose return instructions — pick one.** |
+
+Structured returns are delivered via the `yield` tool, so agents with an `output`
+schema list `yield` in their `tools`. Inter-agent messaging (the review pair) is
+the `hub` tool (`op: send`/`op: wait`, addressing peers by agent name) — omp has
+no IRC.
 
 ### Two rules that fail silently
 
-**Never name an agent after one of omp's bundled eight** — `explore`, `plan`,
-`designer`, `reviewer`, `librarian`, `oracle`, `task`, `quick_task`. A same-named
-file silently overrides omp's own agent. This is why every agent here is prefixed
-`kb-`. `validate.py` errors on collisions.
+**Never name an agent after one of omp's bundled agents** — the exported set is
+`designer`, `librarian`, `reviewer`, `scout`, `sonic`, `task`, plus `explore`,
+`plan`, `oracle`, `quick_task`. A same-named file silently overrides omp's own
+agent. This is why every agent here is prefixed `kb-`. `validate.py` errors on
+collisions.
 
 **Never give an agent both an `output` schema and a prose return instruction.**
 The docs say pick one. Agents with `output` return structured objects the
@@ -105,20 +118,20 @@ produces unpredictable returns.
 
 | Agent | Role | Returns | Column |
 |---|---|---|---|
-| `kb-intake` | smol | json | classify issue vs spec, scope, value hypothesis |
-| `kb-planner` | slow | prose | epics, stories, acceptance criteria |
-| `kb-decompose` | slow | json | tasks, file claims, dependency layers |
-| `kb-dev` | default | json | one task, strict red-green-refactor |
-| `kb-review` | slow | prose | first-pass findings |
-| `kb-critic` | default | json | challenge, reconcile, apply fixes |
-| `kb-qa` | default | json | full suite, e2e, Playwright scaffold |
-| `kb-release` | smol | json | merge, release notes, PR |
-| `kb-retro` | smol | prose | post-cycle waste audit |
-| `kb-forensics` | smol | prose | session cost audit (off-board) |
+| `kb-intake` | `@smol` | json | classify issue vs spec, scope, value hypothesis |
+| `kb-planner` | `@slow` | prose | epics, stories, acceptance criteria |
+| `kb-decompose` | `@slow` | json | tasks, file claims, dependency layers |
+| `kb-dev` | `@default` | json | one task, strict red-green-refactor |
+| `kb-review` | `@slow` | prose | first-pass findings |
+| `kb-critic` | `@default` | json | challenge, reconcile, apply fixes |
+| `kb-qa` | `@default` | json | full suite, e2e, Playwright scaffold |
+| `kb-release` | `@smol` | json | merge, release notes, PR |
+| `kb-retro` | `@smol` | prose | post-cycle waste audit |
+| `kb-forensics` | `@smol` | prose | session cost audit (off-board) |
 
-Roles are deliberate. `slow` is reserved for the three places where a wrong call
+Roles are deliberate. `@slow` is reserved for the three places where a wrong call
 compounds across the whole cycle — planning, decomposition, and first-pass
-review. Everything mechanical is `smol`. **Do not upgrade a role without a
+review. Everything mechanical is `@smol`. **Do not upgrade a role without a
 reason you can state**; this is the largest cost lever in the system, and the
 person running it is budget-constrained.
 
@@ -221,12 +234,12 @@ These were chosen deliberately. Changing them is fine — reverting them by
 accident is not.
 
 **Two review agents, not three.** `kb-review` produces findings, `kb-critic`
-challenges them over IRC, then reconciles *and applies the fixes*. An earlier
+challenges them over the hub, then reconciles *and applies the fixes*. An earlier
 design had a separate arbiter. Collapsing it removes an agent and a round-trip.
 
 The risk this creates: the critic both rules on findings and fixes them, so its
 fixes could ship unreviewed. Rather than reintroduce a third agent, the reviewer —
-already live on the channel — verifies the critic's fixes in one closing round
+already live on the hub — verifies the critic's fixes in one closing round
 before the verdict is final, checking each fix resolves its finding and did not
 reach past it. The outcome is recorded in `reviewer_signoff`
 (`confirmed`/`objected`/`unavailable`), which the orchestrator gates on. This
@@ -263,8 +276,12 @@ behavior or delete it.
 
 ## Honest limitations
 
-- **Unexercised against live omp.** The `output` schemas are the most likely
-  thing to need adjusting if omp validates more strictly than assumed.
+- **Format verified, behavior unexercised.** The frontmatter format — `@`-role
+  lists, tool names, the `output` DSL, `hub` messaging — was reconciled against
+  omp's own bundled agents in `~/.omp/agent/agents/`, so it matches what omp
+  emits. What has *not* been run against a live omp is the cycle itself: whether
+  each agent does what its prompt says, and whether the `output` schemas round-trip
+  through `yield` exactly as assumed.
 - **The retrospective cannot save money on the cycle it audits.** That spend
   already happened; the value is entirely in changes it prompts. `kb-retro` is
   instructed to say this and to skip trivial cycles.

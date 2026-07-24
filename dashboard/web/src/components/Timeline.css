@@ -187,3 +187,52 @@
   padding-left: 1.5rem;
   border-left: 1px solid var(--border-tertiary, #e5e5e5);
 }
+
+/* Tool block: collapsible container for tool steps */
+.tool-block {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.75rem;
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--border-tertiary, #e5e5e5);
+}
+
+.tool-block-toggle {
+  align-self: flex-start;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.tool-block-toggle::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.2s ease;
+}
+
+.tool-block-toggle[aria-expanded='true']::before {
+  transform: rotate(45deg);
+}
+
+.tool-block-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+
+.tool-block-content {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+}

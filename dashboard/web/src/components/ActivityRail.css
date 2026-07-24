@@ -124,3 +124,14 @@
   border-color: transparent;
   color: rgba(255, 255, 255, 0.9);
 }
+
+/* E2-S3: Narrow viewport fallback to icon-only */
+@media (max-width: 1024px) {
+  .activity-rail {
+    width: 80px;
+  }
+
+  .activity-rail-label {
+    display: none;
+  }
+}

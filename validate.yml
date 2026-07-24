@@ -1,0 +1,36 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install pyyaml
+
+      - name: Validate agent and skill definitions
+        run: ./validate.py
+
+      - name: Check installer syntax
+        run: bash -n install.sh
+
+      - name: Check manifest is valid JSON
+        run: python3 -c "import json; json.load(open('package.json'))"
+
+      - name: Installer smoke test
+        run: |
+          ./install.sh --project --dry-run
+          ./install.sh --project
+          test -f .omp/agents/kb-critic.md
+          test -f .omp/skills/kanban-cycle/SKILL.md
+          test "$(ls .omp/agents/*.md | wc -l)" -eq 10
+          ./install.sh --project --uninstall
+          test ! -d .omp/skills/kanban-cycle

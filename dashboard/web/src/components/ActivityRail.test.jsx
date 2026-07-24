@@ -74,7 +74,8 @@ describe('ActivityRail Active State (E1-S1-AC2)', () => {
     const activeItem = container.querySelector('.activity-rail-item.active');
     
     expect(activeItem).toBeInTheDocument();
-    expect(activeItem).toHaveTextContent('');  // Just verifies it exists and has the active class
+    expect(activeItem).toHaveClass('active');
+    expect(activeItem).toHaveTextContent('Sessions');  // Verify it renders with label
   });
 });
 
@@ -104,5 +105,94 @@ describe('WCAG AA Contrast (E1-S1-AC3)', () => {
     
     // WCAG AA requires >= 4.5:1 for normal text
     expect(contrast).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('Dark Sidebar with Labels & Feedback (E2-S1)', () => {
+  describe('E2-S1-AC1: Labels visible on sidebar', () => {
+    it('renders icon + visible text label for Sessions, Observability, Configurations', () => {
+      const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      // Verify labels are rendered as text content (not just in title attribute)
+      expect(screen.getByText('Sessions')).toBeInTheDocument();
+      expect(screen.getByText('Observability')).toBeInTheDocument();
+      expect(screen.getByText('Configurations')).toBeInTheDocument();
+      
+      // Verify each label is within a button (the section item)
+      const sessionBtn = screen.getByRole('button', { name: /sessions/i });
+      const obsBtn = screen.getByRole('button', { name: /observability/i });
+      const configBtn = screen.getByRole('button', { name: /configurations/i });
+      
+      expect(sessionBtn).toBeInTheDocument();
+      expect(obsBtn).toBeInTheDocument();
+      expect(configBtn).toBeInTheDocument();
+    });
+  });
+
+  describe('E2-S1-AC3: Active section highlighting', () => {
+    it('only the active section carries aria-current="page" and the active class', () => {
+      const { rerender } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+      
+      // Sessions is active
+      const sessionBtn = screen.getByRole('button', { name: /sessions/i });
+      const obsBtn = screen.getByRole('button', { name: /observability/i });
+      const configBtn = screen.getByRole('button', { name: /configurations/i });
+      
+      expect(sessionBtn).toHaveAttribute('aria-current', 'page');
+      expect(sessionBtn).toHaveClass('active');
+      
+      expect(obsBtn).not.toHaveAttribute('aria-current');
+      expect(obsBtn).not.toHaveClass('active');
+      
+      expect(configBtn).not.toHaveAttribute('aria-current');
+      expect(configBtn).not.toHaveClass('active');
+      
+      // Re-render with observability active
+      rerender(<ActivityRail active="observability" onSelect={vi.fn()} />);
+      
+      expect(sessionBtn).not.toHaveAttribute('aria-current');
+      expect(sessionBtn).not.toHaveClass('active');
+      
+      expect(obsBtn).toHaveAttribute('aria-current', 'page');
+      expect(obsBtn).toHaveClass('active');
+      
+      expect(configBtn).not.toHaveAttribute('aria-current');
+      expect(configBtn).not.toHaveClass('active');
+    });
+  });
+
+  describe('E2-S1-AC2: Hover treatment', () => {
+    it('hovering an item applies the hover treatment distinct from resting state', () => {
+      // E2-S1-AC2: Verify CSS has distinct hover styles
+      const activityRailCssPath = path.join(__dirname, './ActivityRail.css');
+      const activityRailCss = fs.readFileSync(activityRailCssPath, 'utf-8');
+      
+      // Verify hover rule exists and changes background and/or color
+      expect(activityRailCss).toMatch(/\.activity-rail-item:hover\s*\{[\s\S]*?background:\s*(rgba|var|#)/);
+      expect(activityRailCss).toMatch(/\.activity-rail-item:hover\s*\{[\s\S]*?color:\s*(rgba|var|#|white)/);
+      
+      // Verify the base item has different background from hover
+      const baseRule = activityRailCss.match(/\.activity-rail-item\s*\{[\s\S]*?\}/)[0];
+      const hoverRule = activityRailCss.match(/\.activity-rail-item:hover\s*\{[\s\S]*?\}/)[0];
+      
+      // Base should have background: transparent
+      expect(baseRule).toMatch(/background:\s*transparent/);
+      // Hover should have different background
+      expect(hoverRule).toMatch(/background:\s*rgba/);
+    });
+  });
+
+  describe('E2-S1-AC4: onSelect callback', () => {
+    it('clicking a non-active item calls onSelect with its section id', () => {
+      const onSelect = vi.fn();
+      render(<ActivityRail active="sessions" onSelect={onSelect} />);
+      
+      const obsBtn = screen.getByRole('button', { name: /observability/i });
+      
+      fireEvent.click(obsBtn);
+      
+      expect(onSelect).toHaveBeenCalledWith('observability');
+      expect(onSelect).toHaveBeenCalledTimes(1);
+    });
   });
 });

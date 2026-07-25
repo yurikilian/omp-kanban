@@ -6,10 +6,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  reporter: [
+    ['list'],
+    ['json', { outputFile: '../../.kanban/runs/20260724-232248-dashboard-scroll-sidebar/qa-e2e-results.json' }],
+  ],
   timeout: 30000,
   use: {
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:54677',
+    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:5182',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -25,12 +28,10 @@ export default defineConfig({
     },
   ],
 
-  // Use existing running server (e.g., from `npm run dev` or the dashboard at :54677)
-  // If you need to start a dev server, uncomment webServer below
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:5173',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120 * 1000,
-  // },
+  webServer: process.env.PLAYWRIGHT_TEST_BASE_URL ? undefined : {
+    command: 'npm run dev -- --host 127.0.0.1 --port 5182',
+    url: 'http://127.0.0.1:5182',
+    reuseExistingServer: false,
+    timeout: 120 * 1000,
+  },
 });

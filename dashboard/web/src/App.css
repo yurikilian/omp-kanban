@@ -42,6 +42,36 @@
   overflow: hidden;
 }
 
+/* Collapsed state: the 280px column is not rendered at all, so the transcript
+   gets the full width. What stays is a flush chevron tab against the content's
+   leading edge — the only affordance needed to bring the column back. */
+.sidebar-expand {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: none;
+  border-right: 1px solid var(--border-color);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.sidebar-expand:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.sidebar-expand-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 .content {
   flex: 1;
   display: flex;

@@ -55,6 +55,31 @@
   padding: 0.0625rem 0.5rem;
 }
 
+.session-list-collapse {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.session-list-collapse:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.session-list-collapse-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
 .session-list-header-sort {
   display: flex;
   justify-content: flex-start;

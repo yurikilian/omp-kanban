@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 import App from './App';
 
@@ -685,7 +685,9 @@ describe('App plan panel removal', () => {
     }, { timeout: 3000 });
 
     const body = JSON.parse(putCall[1].body);
-    expect(body).toEqual({ sortBy: 'modified' });
+    // E1-S4 added `sidebarCollapsed` to the persisted set; `planPanelCollapsed`
+    // stays gone.
+    expect(body).toEqual({ sortBy: 'modified', sidebarCollapsed: false });
     expect(putCall[1].body).not.toContain('planPanelCollapsed');
     expect(body).not.toHaveProperty('planPanelCollapsed');
   });
@@ -707,5 +709,119 @@ describe('App plan panel removal', () => {
     const path = require('path');
     expect(fs.existsSync(path.join(__dirname, './components/PlanPanel.jsx'))).toBe(false);
     expect(fs.existsSync(path.join(__dirname, './components/PlanPanel.css'))).toBe(false);
+  });
+});
+
+// E1-S4: the fixed 280px sidebar can be collapsed away entirely to give the
+// transcript the full width, and the choice rides along in the same
+// /api/preferences object that already carries `sortBy`.
+describe('App sidebar collapse', () => {
+  const SESSIONS = [
+    { id: 's1', name: 'First Session', timestamp: '2026-07-21T14:30:00Z', model: 'claude-opus-4-8' },
+    { id: 's2', name: 'Second Session', timestamp: '2026-07-21T14:00:00Z', model: 'claude-haiku-4-5' }
+  ];
+
+  const mountApp = async (prefs = {}) => {
+    fetch.mockImplementation((url) => {
+      if (url === '/api/preferences') {
+        return Promise.resolve({ ok: true, json: async () => prefs });
+      }
+      if (typeof url === 'string' && url.includes('/timeline')) {
+        return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
+      }
+      if (url === '/api/sessions') {
+        return Promise.resolve({ ok: true, json: async () => SESSIONS });
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+
+    const { container } = render(<App />);
+    // The preferences GET has to settle before the collapse state is
+    // meaningful — until then the shell is still on its default.
+    await waitFor(() => {
+      expect(container.querySelector('.session-list, .sidebar-expand')).toBeTruthy();
+    }, { timeout: 3000 });
+    return container;
+  };
+
+  // ActivityRail's own icon-labels toggle is (mis)labelled "Collapse sidebar"
+  // / "Expand sidebar" too, so an unscoped getByLabelText would be ambiguous.
+  // Reach the session-sidebar controls through their own containers.
+  const collapseControl = (container) =>
+    within(container.querySelector('.session-list-header')).getByLabelText(/collapse sidebar/i);
+
+  const expandControl = (container) => container.querySelector('.sidebar-expand');
+
+  beforeEach(() => {
+    fetch.mockClear();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // E1-S4-AC2
+  it('removes the .sidebar column and its rows when the collapse control is clicked, leaving an expand control', async () => {
+    const container = await mountApp();
+    await waitFor(() => {
+      expect(container.querySelectorAll('.session-item').length).toBe(SESSIONS.length);
+    }, { timeout: 3000 });
+
+    fireEvent.click(collapseControl(container));
+
+    expect(container.querySelector('.sidebar')).toBeNull();
+    expect(container.querySelectorAll('.session-item').length).toBe(0);
+    const expand = expandControl(container);
+    expect(expand).toBeTruthy();
+    expect(expand.getAttribute('aria-label')).toMatch(/expand sidebar/i);
+  });
+
+  // E1-S4-AC4
+  it('restores the fixed 280px column and the session rows when the expand control is clicked', async () => {
+    const container = await mountApp({ sidebarCollapsed: true });
+
+    fireEvent.click(expandControl(container));
+
+    const sidebar = container.querySelector('.sidebar');
+    expect(sidebar).toBeTruthy();
+    expect(window.getComputedStyle(sidebar).width).toBe('280px');
+    await waitFor(() => {
+      expect(container.querySelectorAll('.session-item').length).toBe(SESSIONS.length);
+    }, { timeout: 3000 });
+  });
+
+  // E1-S4-AC3
+  it('starts collapsed when GET /api/preferences returns sidebarCollapsed: true', async () => {
+    const container = await mountApp({ sidebarCollapsed: true });
+
+    expect(container.querySelector('.sidebar')).toBeNull();
+    expect(expandControl(container)).toBeTruthy();
+  });
+
+  // E1-S4-AC3
+  it('ignores a non-boolean stored sidebarCollapsed', async () => {
+    const container = await mountApp({ sidebarCollapsed: 'yes' });
+
+    expect(container.querySelector('.sidebar')).toBeTruthy();
+  });
+
+  // E1-S4-AC3
+  it('writes sidebarCollapsed: true into the PUT /api/preferences body when collapsed', async () => {
+    const container = await mountApp();
+    await waitFor(() => {
+      expect(container.querySelectorAll('.session-item').length).toBe(SESSIONS.length);
+    }, { timeout: 3000 });
+
+    fireEvent.click(collapseControl(container));
+
+    let putCall;
+    await waitFor(() => {
+      putCall = fetch.mock.calls.find(
+        ([url, init]) => url === '/api/preferences' && init?.method === 'PUT'
+      );
+      expect(putCall).toBeTruthy();
+    }, { timeout: 3000 });
+
+    expect(JSON.parse(putCall[1].body)).toEqual({ sortBy: 'created', sidebarCollapsed: true });
   });
 });

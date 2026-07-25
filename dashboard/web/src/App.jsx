@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDoubleRightIcon } from '@heroicons/react/24/outline';
 import SessionList from './components/SessionList';
 import SessionDetail from './components/SessionDetail';
 import ThemeSwitcher from './components/ThemeSwitcher';
@@ -21,12 +22,14 @@ function AppContent() {
   const [error, setError] = useState(null);
   const [sortBy, setSortBy] = useState('created'); // 'created' | 'modified'
   const [timelineReloadToken, setTimelineReloadToken] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     fetchSessions();
   }, []);
 
-  // ---- Preferences (sort order), persisted via GET/PUT /api/preferences
+  // ---- Preferences (sort order, sidebar collapse), persisted via
+  // GET/PUT /api/preferences
   // instead of staying purely in-memory.
   // `prefsLoadedRef` gates the save effect so the initial state defaults
   // (before the GET response lands) never overwrite whatever was already
@@ -42,6 +45,7 @@ function AppContent() {
       .then((prefs) => {
         if (cancelled || !prefs) return;
         if (prefs.sortBy === 'created' || prefs.sortBy === 'modified') setSortBy(prefs.sortBy);
+        if (typeof prefs.sidebarCollapsed === 'boolean') setSidebarCollapsed(prefs.sidebarCollapsed);
       })
       .catch(() => {})
       .finally(() => {
@@ -59,11 +63,11 @@ function AppContent() {
       fetch('/api/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sortBy })
+        body: JSON.stringify({ sortBy, sidebarCollapsed })
       }).catch(() => {});
     }, PREFS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(prefsSaveTimeoutRef.current);
-  }, [sortBy]);
+  }, [sortBy, sidebarCollapsed]);
 
   // Refs to avoid stale closure issues in the event listener
   const selectedSessionRef = useRef(selectedSession);
@@ -219,18 +223,31 @@ function AppContent() {
           <ComingSoon {...comingSoon} />
         ) : (
           <>
-            <aside className="sidebar">
-              <SessionList
-                sessions={sortedSessions}
-                selectedSession={selectedSession}
-                onSelectSession={handleSelectSession}
-                onDeleteSession={handleDeleteSession}
-                onTogglePin={handleTogglePin}
-                sortBy={sortBy}
-                onSortChange={handleSortChange}
-                loading={loading}
-              />
-            </aside>
+            {sidebarCollapsed ? (
+              <button
+                type="button"
+                className="sidebar-expand"
+                aria-label="Expand sidebar"
+                aria-expanded="false"
+                onClick={() => setSidebarCollapsed(false)}
+              >
+                <ChevronDoubleRightIcon className="sidebar-expand-icon" aria-hidden="true" />
+              </button>
+            ) : (
+              <aside className="sidebar">
+                <SessionList
+                  sessions={sortedSessions}
+                  selectedSession={selectedSession}
+                  onSelectSession={handleSelectSession}
+                  onDeleteSession={handleDeleteSession}
+                  onTogglePin={handleTogglePin}
+                  sortBy={sortBy}
+                  onSortChange={handleSortChange}
+                  onToggleCollapse={() => setSidebarCollapsed(true)}
+                  loading={loading}
+                />
+              </aside>
+            )}
             <main className="content">
               {selectedSession ? (
                 <SessionDetail

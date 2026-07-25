@@ -139,6 +139,8 @@
   padding: 0.75rem 1rem;
 }
 .turn-user .turn-who { color: var(--msg-user-text); }
+/* Markdown-rendered like the assistant turn; `pre-wrap` keeps the soft line
+   breaks markdown would otherwise collapse inside a prompt's paragraph. */
 .turn-user-body { white-space: pre-wrap; color: var(--text-primary); line-height: 1.55; }
 
 /* Assistant: flowing prose with a per-agent lane accent. The guide thickness is

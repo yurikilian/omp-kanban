@@ -860,6 +860,42 @@ describe('Timeline Component - Flat markdown transcript (E3-S1)', () => {
     });
   });
 
+  it('renders a user turn body with markdown content through .markdown-body too (AC3)', () => {
+    const markdown = [
+      '### Ask',
+      '',
+      '- run **all** the `unit` tests',
+      '- report back'
+    ].join('\n');
+    const timeline = {
+      id: 'session-1',
+      name: 'Session',
+      project: 'proj',
+      count: 1,
+      agents: [{ name: 'main', lane: 0 }],
+      root: {
+        agent: 'main',
+        lane: 0,
+        firstTs: '2026-07-21T14:00:00.000Z',
+        lastTs: '2026-07-21T14:00:00.000Z',
+        durationMs: 0,
+        count: 1,
+        events: [
+          { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: markdown }
+        ]
+      }
+    };
+    render(<Timeline timeline={timeline} />);
+
+    const body = screen.getByText('Ask').closest('.turn-user .markdown-body');
+    expect(body).not.toBeNull();
+    expect(body.querySelector('h3')).not.toBeNull();
+    expect(body.querySelector('ul li strong')).not.toBeNull();
+    expect(body.querySelector('code')).not.toBeNull();
+    // The raw markdown source must not survive as literal text.
+    expect(screen.queryByText(/### Ask/)).toBeNull();
+  });
+
   it('separates consecutive turns with .timeline-root gap rather than per-turn boxing (AC4)', () => {
     const rootBlock = declarationsFor('.timeline-root');
     expect(declaration(rootBlock, 'gap')).toMatch(/^[\d.]+rem$/);

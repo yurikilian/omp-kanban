@@ -2,6 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SessionList from './SessionList';
+import fs from 'fs';
+import path from 'path';
+
+const mockLoadedSessions = [
+  { id: 'loaded-1', name: 'Loaded One', timestamp: '2026-07-21T14:30:00Z', model: 'claude-opus-4-8' },
+  { id: 'loaded-2', name: 'Loaded Two', timestamp: '2026-07-21T14:00:00Z', model: 'claude-haiku-4-5' }
+];
 
 describe('SessionList Component', () => {
   const mockSessions = [
@@ -462,5 +469,71 @@ describe('SessionList sidebar title truncation', () => {
     renderLong();
     expect(getComputedStyle(document.querySelector('.session-item-dot')).flexShrink).toBe('0');
     expect(getComputedStyle(document.querySelector('.session-item-actions')).flexShrink).toBe('0');
+  });
+});
+
+// Skeleton placeholder rows while sessions load (E4-S1).
+describe('SessionList loading skeleton', () => {
+  const renderLoading = () =>
+    render(
+      <SessionList sessions={[]} selectedSession={null} onSelectSession={vi.fn()} loading />
+    );
+
+  // E4-S1-AC1
+  it('renders skeleton placeholder rows and no "Loading sessions..." text while loading', () => {
+    const { container } = renderLoading();
+
+    expect(container.querySelector('.session-list-skeleton')).toBeTruthy();
+    expect(container.querySelectorAll('.skeleton-row').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Loading sessions...')).not.toBeInTheDocument();
+  });
+
+  // E4-S1-AC2: the skeleton is the loading state only — real rows take over.
+  it('renders real .session-item rows and no skeleton once sessions are supplied', () => {
+    const { container } = render(
+      <SessionList sessions={mockLoadedSessions} selectedSession={null} onSelectSession={vi.fn()} />
+    );
+
+    expect(container.querySelectorAll('.session-item').length).toBe(mockLoadedSessions.length);
+    expect(container.querySelector('.session-list-skeleton')).toBeNull();
+  });
+
+  // E4-S1-AC1: the empty-state copy belongs to a resolved-but-empty list, not
+  // to loading — showing it under the skeleton would say "no sessions" about a
+  // list nobody has fetched yet.
+  it('does not show the empty-filter message while loading', () => {
+    renderLoading();
+    expect(screen.queryByText('No sessions match this filter.')).not.toBeInTheDocument();
+  });
+
+  // E4-S1-AC3
+  it('gives every skeleton placeholder the shared .skeleton class', () => {
+    const { container } = renderLoading();
+    const rows = container.querySelectorAll('.skeleton-row');
+    for (const row of rows) {
+      const placeholders = row.querySelectorAll('.skeleton');
+      expect(placeholders.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// E4-S1-AC3: the shared primitive's stylesheet is the loading affordance —
+// asserted against the source because jsdom performs no animation.
+describe('Skeleton shared primitive stylesheet', () => {
+  const skeletonCss = fs
+    .readFileSync(path.join(__dirname, './Skeleton.css'), 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('animates .skeleton with a keyframed pulse', () => {
+    expect(skeletonCss).toMatch(/\.skeleton\s*\{[\s\S]*?animation:[^;]*skeleton-pulse/);
+    expect(skeletonCss).toMatch(/@keyframes\s+skeleton-pulse\s*\{/);
+  });
+
+  it('disables the animation under prefers-reduced-motion: reduce', () => {
+    const reduced = skeletonCss.match(
+      /@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{([\s\S]*?\n\})/
+    );
+    expect(reduced).toBeTruthy();
+    expect(reduced[1]).toMatch(/\.skeleton[\s\S]*?animation\s*:\s*none/);
   });
 });

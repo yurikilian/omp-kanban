@@ -380,3 +380,19 @@
   padding: 1rem 0;
   font-size: 0.85rem;
 }
+
+/* Loading placeholders. The row box mirrors .session-item so the list does not
+   reflow when real sessions arrive. */
+.skeleton-row {
+  padding: 0.75rem 0.75rem 0.75rem calc(0.75rem - 3px);
+  margin-bottom: 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+}
+
+.skeleton-row-title {
+  height: 0.9rem;
+  margin-bottom: 0.5rem;
+}

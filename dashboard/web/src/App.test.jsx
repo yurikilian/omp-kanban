@@ -97,10 +97,33 @@ describe('App Integration', () => {
     }, { timeout: 3000 });
   });
 
-  it('should display loading state initially', () => {
+  // E4-S1-AC1
+  it('while sessions load, the sidebar renders skeleton rows and "Loading sessions..." is absent from the DOM', () => {
     fetch.mockImplementation(() => new Promise(() => {}));
-    render(<App />);
-    expect(screen.getByText('Loading sessions...')).toBeInTheDocument();
+    const { container } = render(<App />);
+
+    // The shell itself mounts during loading instead of being replaced by a
+    // text line.
+    expect(screen.getByText('Agent Session Viewer')).toBeInTheDocument();
+    expect(container.querySelector('.sidebar')).toBeInTheDocument();
+
+    expect(container.querySelector('.session-list-skeleton')).toBeInTheDocument();
+    expect(container.querySelectorAll('.skeleton-row').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Loading sessions...')).not.toBeInTheDocument();
+  });
+
+  // E4-S1-AC2
+  it('replaces the skeleton rows with real .session-item rows once the sessions fetch resolves', async () => {
+    fetch.mockResolvedValueOnce({
+      json: async () => mockSessions
+    });
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.session-item').length).toBe(mockSessions.length);
+    }, { timeout: 3000 });
+    expect(container.querySelector('.session-list-skeleton')).not.toBeInTheDocument();
   });
 
   it('should display sessions after loading', async () => {

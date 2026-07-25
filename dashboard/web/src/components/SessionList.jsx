@@ -3,6 +3,7 @@ import { TrashIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { StarIcon } from '@heroicons/react/24/outline';
 import StatusDot from './StatusDot';
+import Skeleton from './Skeleton';
 import './SessionList.css';
 
 const FILTERS = [
@@ -11,6 +12,9 @@ const FILTERS = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'pinned', label: 'Pinned' }
 ];
+
+// Enough rows to fill the sidebar's first screen without implying a count.
+const SKELETON_ROWS = [0, 1, 2, 3, 4, 5];
 
 function matchesFilter(session, filter) {
   if (filter === 'pinned') return !!session.pinned;
@@ -26,7 +30,8 @@ export default function SessionList({
   onDeleteSession,
   onTogglePin = () => {},
   sortBy = 'created',
-  onSortChange = () => {}
+  onSortChange = () => {},
+  loading = false
 }) {
   const [filter, setFilter] = useState('all');
 
@@ -90,64 +95,75 @@ export default function SessionList({
           ))}
         </div>
       </div>
-      <ul>
-        {filteredSessions.map(session => (
-          <li
-            key={session.id}
-            className={`session-item ${selectedSession?.id === session.id ? 'active' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-current={selectedSession?.id === session.id ? 'true' : undefined}
-            onClick={() => onSelectSession(session)}
-            onKeyDown={(event) => handleKeyDown(event, session)}
-          >
-            <div className="session-item-row">
-              <StatusDot live={false} busy={false} className="session-item-dot" />
-              <div className="session-name">{session.name || 'Untitled session'}</div>
-              <div className="session-item-actions">
-                <button
-                  type="button"
-                  className={`session-pin ${session.pinned ? 'session-pin-active' : ''}`}
-                  aria-label={`${session.pinned ? 'Unpin' : 'Pin'} ${session.name || 'Untitled session'}`}
-                  title={session.pinned ? 'Unpin session' : 'Pin session'}
-                  onClick={(e) => handlePinClick(e, session)}
-                >
-                  {session.pinned ? (
-                    <StarIconSolid className="session-pin-icon" aria-hidden="true" />
-                  ) : (
-                    <StarIcon className="session-pin-icon" aria-hidden="true" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="session-delete"
-                  aria-label={`Delete ${session.name || 'Untitled session'}`}
-                  title="Delete session"
-                  onClick={(event) => handleDeleteClick(event, session)}
-                >
-                  <TrashIcon className="session-delete-icon" aria-hidden="true" />
-                </button>
+      {loading ? (
+        <div className="session-list-skeleton" role="status" aria-label="Loading sessions">
+          {SKELETON_ROWS.map((row) => (
+            <div key={row} className="skeleton-row">
+              <Skeleton className="skeleton-row-title" />
+              <Skeleton className="skeleton-row-meta" width="60%" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <ul>
+          {filteredSessions.map(session => (
+            <li
+              key={session.id}
+              className={`session-item ${selectedSession?.id === session.id ? 'active' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-current={selectedSession?.id === session.id ? 'true' : undefined}
+              onClick={() => onSelectSession(session)}
+              onKeyDown={(event) => handleKeyDown(event, session)}
+            >
+              <div className="session-item-row">
+                <StatusDot live={false} busy={false} className="session-item-dot" />
+                <div className="session-name">{session.name || 'Untitled session'}</div>
+                <div className="session-item-actions">
+                  <button
+                    type="button"
+                    className={`session-pin ${session.pinned ? 'session-pin-active' : ''}`}
+                    aria-label={`${session.pinned ? 'Unpin' : 'Pin'} ${session.name || 'Untitled session'}`}
+                    title={session.pinned ? 'Unpin session' : 'Pin session'}
+                    onClick={(e) => handlePinClick(e, session)}
+                  >
+                    {session.pinned ? (
+                      <StarIconSolid className="session-pin-icon" aria-hidden="true" />
+                    ) : (
+                      <StarIcon className="session-pin-icon" aria-hidden="true" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="session-delete"
+                    aria-label={`Delete ${session.name || 'Untitled session'}`}
+                    title="Delete session"
+                    onClick={(event) => handleDeleteClick(event, session)}
+                  >
+                    <TrashIcon className="session-delete-icon" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="session-meta">
-              {session.active && (
-                <span className="session-active-indicator">
-                  <span className="session-active-dot"></span>
-                  Active
+              <div className="session-meta">
+                {session.active && (
+                  <span className="session-active-indicator">
+                    <span className="session-active-dot"></span>
+                    Active
+                  </span>
+                )}
+                <span className="session-model">{session.model}</span>
+                <span className="session-time">
+                  {new Date(session.timestamp).toLocaleDateString()}{' '}
+                  {new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
-              )}
-              <span className="session-model">{session.model}</span>
-              <span className="session-time">
-                {new Date(session.timestamp).toLocaleDateString()}{' '}
-                {new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          </li>
-        ))}
-        {filteredSessions.length === 0 && (
-          <li className="session-list-empty">No sessions match this filter.</li>
-        )}
-      </ul>
+              </div>
+            </li>
+          ))}
+          {filteredSessions.length === 0 && (
+            <li className="session-list-empty">No sessions match this filter.</li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }

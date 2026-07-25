@@ -190,10 +190,6 @@ function AppContent() {
     await refreshSessionsPreservingSelection({ removedId: session.id });
   };
 
-  if (loading) {
-    return <div className="container"><p>Loading sessions...</p></div>;
-  }
-
   if (error) {
     return <div className="container"><p className="error">Error: {error}</p></div>;
   }
@@ -232,6 +228,7 @@ function AppContent() {
                 onTogglePin={handleTogglePin}
                 sortBy={sortBy}
                 onSortChange={handleSortChange}
+                loading={loading}
               />
             </aside>
             <main className="content">

@@ -133,8 +133,13 @@ describe('content.css scroll containment (E2-S1-AC2)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('keeps horizontal overflow on code blocks, which is legitimate', () => {
-    expect(declarationsFor('.markdown-body pre')).toContain('overflow-x: auto');
+  it('keeps horizontal overflow on code blocks while explicitly suppressing vertical overflow', () => {
+    const markdownCode = declarationsFor('.markdown-body pre');
+    const codeView = declarationsFor('.code-view > pre');
+    expect(markdownCode).toContain('overflow-x: auto');
+    expect(markdownCode).toContain('overflow-y: hidden');
+    expect(codeView).toContain('overflow-x: auto !important');
+    expect(codeView).toContain('overflow-y: hidden !important');
   });
 });
 

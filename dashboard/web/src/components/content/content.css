@@ -101,6 +101,7 @@
   padding: 0.5rem;
   border-radius: 4px;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .markdown-body code {
@@ -123,6 +124,7 @@
   /* Horizontal scrolling on long code lines is legitimate; vertical is not —
      the detail area scrolls as one region, so code renders at full height. */
   overflow-x: auto !important;
+  overflow-y: hidden !important;
   font-size: 0.8125rem !important;
 }
 

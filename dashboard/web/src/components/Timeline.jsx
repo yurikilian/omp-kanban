@@ -331,7 +331,7 @@ function AgentSection({ node, refIso, isRoot = false }) {
   ));
 
   if (isRoot) {
-    return <div className="timeline-section timeline-root">{rows}</div>;
+    return <div className="timeline-section timeline-root" style={{ '--lane-color': color }}>{rows}</div>;
   }
 
   return (

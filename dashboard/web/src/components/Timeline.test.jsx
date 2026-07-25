@@ -995,36 +995,37 @@ describe('Timeline Component - Thin per-agent lane guides (E3-S2)', () => {
     expect(dot[1].trim()).toMatch(/em$/);
   });
 
-  it('draws the .turn-assistant guide at the tokenized thickness in --lane-color, never 3px (AC2)', () => {
-    const block = declarationsFor('.turn-assistant');
-    expect(block).not.toBe('');
-    const borderLeft = declaration(block, 'border-left');
-    expect(borderLeft).not.toBeNull();
-    expect(borderLeft).toContain('var(--lane-guide-width)');
-    expect(borderLeft).toContain('var(--lane-color');
-    expect(borderLeft).not.toMatch(/\dpx/);
+  it('draws each agent section guide at the tokenized thickness in its --lane-color (AC2)', () => {
+    for (const selector of ['.timeline-root', '.timeline-nested']) {
+      const block = declarationsFor(selector);
+      expect(block).not.toBe('');
+      const borderLeft = declaration(block, 'border-left');
+      expect(borderLeft).not.toBeNull();
+      expect(borderLeft).toContain('var(--lane-guide-width)');
+      expect(borderLeft).toContain('var(--lane-color');
+      expect(borderLeft).not.toMatch(/\dpx/);
+    }
 
     render(<Timeline timeline={nestedTimeline()} />);
-    const assistant = document.querySelector('.turn-assistant');
-    expect(assistant.style.getPropertyValue('--lane-color')).not.toBe('');
+    expect(document.querySelector('.timeline-root').style.getPropertyValue('--lane-color')).toBe('#3b82f6');
   });
 
-  it('gives every agent lane its own inline --lane-color from LANE_COLORS, main = LANE_COLORS[0] (AC3)', () => {
+  it('gives every agent section its own inline --lane-color from LANE_COLORS, main = LANE_COLORS[0] (AC3)', () => {
     render(<Timeline timeline={nestedTimeline()} />);
 
-    const mainTurn = document.querySelector('.timeline-root > .turn-group .turn-assistant');
-    expect(mainTurn.style.getPropertyValue('--lane-color')).toBe('#3b82f6');
+    const root = document.querySelector('.timeline-root');
+    expect(root.style.getPropertyValue('--lane-color')).toBe('#3b82f6');
 
     // The nested sub-agent section is a lane in its own right, tinted before it
     // is even expanded.
     const nested = document.querySelector('.timeline-nested');
     const subColor = nested.style.getPropertyValue('--lane-color');
     expect(subColor).toBe('#22c55e');
-    expect(subColor).not.toBe(mainTurn.style.getPropertyValue('--lane-color'));
+    expect(subColor).not.toBe(root.style.getPropertyValue('--lane-color'));
 
     fireEvent.click(screen.getByText('scout'));
     const subTurn = nested.querySelector('.turn-assistant');
-    expect(subTurn.style.getPropertyValue('--lane-color')).toBe(subColor);
+    expect(subTurn).not.toBeNull();
   });
 
   it('replaces the nested section box with a thin lane guide in the agent colour (AC3)', () => {

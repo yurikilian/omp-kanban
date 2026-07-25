@@ -3,7 +3,15 @@ import { WrenchScrewdriverIcon } from '@heroicons/react/24/outline';
 import Timeline from './Timeline';
 import SessionKPICards from './SessionKPICards';
 import StatusDot from './StatusDot';
+import Skeleton from './Skeleton';
 import './SessionDetail.css';
+
+// Placeholder counts chosen to match the real footprint: SessionKPICards emits
+// seven cards for a single session (six metrics + the average), and three turns
+// roughly fill the transcript viewport, so the swap to real content does not
+// jump the layout.
+const SKELETON_KPI_CARDS = [0, 1, 2, 3, 4, 5, 6];
+const SKELETON_TURNS = [0, 1, 2];
 
 // Read-only session viewer: displays historical timeline, KPI cards, and session
 // metadata. No live agent attachment, no session creation — sessions are
@@ -69,16 +77,38 @@ export default function SessionDetail({ session, reloadToken }) {
       </div>
 
       <div className="session-detail-messages">
-        <SessionKPICards sessions={[session]} />
+        {timelineStatus === 'loading' ? (
+          <div className="session-detail-skeleton" role="status" aria-label="Loading timeline">
+            <div className="session-detail-skeleton-kpis">
+              {SKELETON_KPI_CARDS.map((card) => (
+                <div key={card} className="session-detail-skeleton-kpi-card">
+                  <Skeleton className="session-detail-skeleton-kpi-icon" />
+                  <div className="session-detail-skeleton-kpi-body">
+                    <Skeleton className="session-detail-skeleton-kpi-value" width="55%" />
+                    <Skeleton className="session-detail-skeleton-kpi-label" width="80%" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {SKELETON_TURNS.map((turn) => (
+              <div key={turn} className="session-detail-skeleton-turn">
+                <Skeleton className="session-detail-skeleton-turn-label" width="7rem" />
+                <Skeleton count={turn === 1 ? 3 : 2} className="session-detail-skeleton-turn-line" />
+                <Skeleton className="session-detail-skeleton-turn-line" width="45%" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <SessionKPICards sessions={[session]} />
 
-        {timelineStatus === 'loading' && (
-          <p className="session-detail-hint">Loading timeline...</p>
-        )}
-        {timelineStatus === 'error' && (
-          <p className="session-detail-hint error">Error loading timeline: {timelineError}</p>
-        )}
-        {timelineStatus === 'loaded' && timeline && (
-          <Timeline timeline={timeline} />
+            {timelineStatus === 'error' && (
+              <p className="session-detail-hint error">Error loading timeline: {timelineError}</p>
+            )}
+            {timelineStatus === 'loaded' && timeline && (
+              <Timeline timeline={timeline} />
+            )}
+          </>
         )}
       </div>
 

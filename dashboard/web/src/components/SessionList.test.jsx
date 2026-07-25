@@ -396,3 +396,71 @@ describe('SessionList Component', () => {
     expect(pinButton).toHaveClass('session-pin-active');
   });
 });
+
+// Single-line ellipsis truncation for sidebar titles (E1-S3).
+//
+// These assert through `getComputedStyle`, not the stylesheet source text:
+// vitest runs with `css: true`, so the real cascade resolves against the
+// rendered node. A source-text match cannot tell a rule that applies from one
+// whose selector matches nothing, and truncation is exactly the kind of
+// property that silently does nothing when the selector or the flex plumbing
+// is wrong. jsdom performs no layout, so AC2 is asserted as the shrink
+// contract that makes overflow impossible (a flex item that may shrink below
+// its content width, clipping the excess) rather than as a pixel measurement.
+describe('SessionList sidebar title truncation', () => {
+  const longName =
+    'A session title that is far longer than the fixed-width sidebar column can ever display';
+  const longSession = [
+    { id: 'long-1', name: longName, timestamp: '2026-07-21T14:30:00Z', model: 'claude-opus-4-8' }
+  ];
+
+  const renderLong = () =>
+    render(
+      <SessionList sessions={longSession} selectedSession={null} onSelectSession={vi.fn()} />
+    );
+
+  // E1-S3-AC1
+  it('truncates .session-name on one line with an ellipsis instead of clamping to a box', () => {
+    renderLong();
+    const name = document.querySelector('.session-name');
+    expect(name).toBeTruthy();
+    expect(name.textContent).toBe(longName);
+
+    const style = getComputedStyle(name);
+    expect(style.whiteSpace).toBe('nowrap');
+    expect(style.overflow).toBe('hidden');
+    expect(style.textOverflow).toBe('ellipsis');
+  });
+
+  // E1-S3-AC1: the -webkit-box line clamp is what made the title wrap to two
+  // lines; `display: -webkit-box` also defeats `text-overflow: ellipsis`, so
+  // leaving it behind would keep the old rendering despite the rules above.
+  it('no longer renders .session-name as a multi-line -webkit-box clamp', () => {
+    renderLong();
+    const style = getComputedStyle(document.querySelector('.session-name'));
+    expect(style.display).not.toBe('-webkit-box');
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('');
+    expect(style.getPropertyValue('-webkit-box-orient')).toBe('');
+  });
+
+  // E1-S3-AC2
+  it('lets .session-name shrink inside the row so a long title cannot widen .session-item', () => {
+    renderLong();
+    const name = document.querySelector('.session-name');
+    const row = document.querySelector('.session-item-row');
+
+    // min-width:auto on a flex item floors it at its content width, which is
+    // precisely how a long title pushes the row wider than the column.
+    expect(getComputedStyle(name).minWidth).toBe('0px');
+    expect(getComputedStyle(name).flexShrink).not.toBe('0');
+    expect(getComputedStyle(row).minWidth).toBe('0px');
+  });
+
+  // E1-S3-AC2: the fixed-size siblings must keep their box instead of being
+  // squeezed, otherwise the row still resolves wider than the column.
+  it('keeps the status dot and action buttons from being squeezed by the title', () => {
+    renderLong();
+    expect(getComputedStyle(document.querySelector('.session-item-dot')).flexShrink).toBe('0');
+    expect(getComputedStyle(document.querySelector('.session-item-actions')).flexShrink).toBe('0');
+  });
+});

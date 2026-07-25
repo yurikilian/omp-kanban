@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TrashIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ChevronDoubleLeftIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { StarIcon } from '@heroicons/react/24/outline';
 import StatusDot from './StatusDot';
@@ -31,6 +31,7 @@ export default function SessionList({
   onTogglePin = () => {},
   sortBy = 'created',
   onSortChange = () => {},
+  onToggleCollapse = () => {},
   loading = false
 }) {
   const [filter, setFilter] = useState('all');
@@ -61,6 +62,15 @@ export default function SessionList({
       <div className="session-list-header">
         <div className="session-list-header-top">
           <h2>Sessions <span className="session-count">{sessions.length}</span></h2>
+          <button
+            type="button"
+            className="session-list-collapse"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+            onClick={onToggleCollapse}
+          >
+            <ChevronDoubleLeftIcon className="session-list-collapse-icon" aria-hidden="true" />
+          </button>
         </div>
         <div className="session-list-header-sort">
           <div className="session-sort-toggle">

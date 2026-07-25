@@ -537,3 +537,40 @@ describe('Skeleton shared primitive stylesheet', () => {
     expect(reduced[1]).toMatch(/\.skeleton[\s\S]*?animation\s*:\s*none/);
   });
 });
+
+// E1-S4: the sidebar gets a collapse control. It lives in the list header so
+// it sits with the other list-level chrome rather than floating over the rows.
+describe('SessionList collapse control', () => {
+  const sessions = [
+    { id: 'a', name: 'Alpha', timestamp: '2026-07-21T14:30:00Z', model: 'claude-opus-4-8' }
+  ];
+
+  const renderList = (props = {}) =>
+    render(
+      <SessionList
+        sessions={sessions}
+        selectedSession={null}
+        onSelectSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        {...props}
+      />
+    );
+
+  // E1-S4-AC1
+  it('renders a collapse control inside .session-list-header', () => {
+    const { container } = renderList();
+    const control = screen.getByLabelText(/collapse sidebar/i);
+
+    expect(control.tagName).toBe('BUTTON');
+    expect(container.querySelector('.session-list-header').contains(control)).toBe(true);
+  });
+
+  // E1-S4-AC1
+  it('invokes onToggleCollapse when the collapse control is clicked', () => {
+    const onToggleCollapse = vi.fn();
+    renderList({ onToggleCollapse });
+
+    fireEvent.click(screen.getByLabelText(/collapse sidebar/i));
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+  });
+});

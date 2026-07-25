@@ -231,7 +231,7 @@ describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
       const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
       
       // Find and click toggle button
-      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      const toggleBtn = screen.getByRole('button', { name: /collapse navigation rail/i });
       expect(toggleBtn).toBeInTheDocument();
       
       // Initially, labels should be visible
@@ -266,7 +266,7 @@ describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
     it('toggle again expands: labels reappear and full width restored', () => {
       const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
       
-      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      const toggleBtn = screen.getByRole('button', { name: /collapse navigation rail/i });
       
       // Collapse
       fireEvent.click(toggleBtn);
@@ -287,7 +287,7 @@ describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
   describe('E2-S2-AC3: Collapsed state persists to localStorage and restores on reload', () => {
     it('collapsed state initializes from localStorage on mount', () => {
       // Set collapsed state in localStorage
-      localStorage.setItem('sidebar-collapsed', 'true');
+      localStorage.setItem('activity-rail-collapsed', 'true');
       
       const { container } = render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
       
@@ -304,17 +304,17 @@ describe('Collapse/Expand Toggle with Persistence (E2-S2)', () => {
       render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
       
       // Initially expanded, localStorage should be false or not set
-      expect(localStorage.getItem('sidebar-collapsed')).not.toBe('true');
+      expect(localStorage.getItem('activity-rail-collapsed')).not.toBe('true');
       
-      const toggleBtn = screen.getByRole('button', { name: /collapse\s*sidebar|toggle\s*sidebar/i });
+      const toggleBtn = screen.getByRole('button', { name: /collapse navigation rail/i });
       
       // Click to collapse
       fireEvent.click(toggleBtn);
-      expect(localStorage.getItem('sidebar-collapsed')).toBe('true');
+      expect(localStorage.getItem('activity-rail-collapsed')).toBe('true');
       
       // Click to expand
       fireEvent.click(toggleBtn);
-      expect(localStorage.getItem('sidebar-collapsed')).toBe('false');
+      expect(localStorage.getItem('activity-rail-collapsed')).toBe('false');
     });
   });
 
@@ -410,5 +410,35 @@ describe('ActivityRail rendered geometry', () => {
     render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
     expect(document.querySelector('svg.activity-rail-icon')).toBeTruthy();
     expect(document.querySelector('svg.activity-rail-toggle-icon')).toBeTruthy();
+  });
+});
+
+// The rail's toggle hides the rail's own icon labels. Naming it "Collapse
+// sidebar" made it collide with the session sidebar's collapse control (added
+// in E1-S4) on both the accessible name and the persisted key, so the two
+// unrelated preferences sat one keystroke apart in the same store.
+describe('ActivityRail toggle names and stores itself distinctly', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('names its toggle for the rail, not for the session sidebar', () => {
+    render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+
+    expect(screen.queryByLabelText(/^\s*(collapse|expand) sidebar\s*$/i)).toBeNull();
+    const toggle = screen.getByRole('button', { name: /collapse navigation rail/i });
+    expect(toggle).toHaveAttribute('title', 'Collapse navigation rail');
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: /expand navigation rail/i })).toBeInTheDocument();
+  });
+
+  it('persists under its own key and never touches sidebar-collapsed', () => {
+    render(<ActivityRail active="sessions" onSelect={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /collapse navigation rail/i }));
+
+    expect(localStorage.getItem('activity-rail-collapsed')).toBe('true');
+    expect(localStorage.getItem('sidebar-collapsed')).toBeNull();
   });
 });

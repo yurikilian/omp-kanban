@@ -560,9 +560,10 @@ describe('App fixed-width sidebar', () => {
     vi.clearAllMocks();
   });
 
-  // E1-S2-AC1
+  // E1-S2-AC1. No viewport is staged: the width no longer derives from one, and
+  // nothing in src/ reads window.innerWidth since the clamp was deleted. Setting
+  // it here would only leak into every later test in this file.
   it('renders .sidebar at a fixed 280px with no resize-driven inline width', async () => {
-    window.innerWidth = 1365;
     const container = await renderWithPrefs();
     const sidebar = container.querySelector('.sidebar');
 
@@ -578,7 +579,6 @@ describe('App fixed-width sidebar', () => {
 
   // E1-S2-AC3
   it('ignores a stored sidebarWidth and omits it from the PUT /api/preferences body', async () => {
-    window.innerWidth = 1365;
     const container = await renderWithPrefs({ sidebarWidth: 860 });
     const sidebar = container.querySelector('.sidebar');
 
@@ -823,5 +823,56 @@ describe('App sidebar collapse', () => {
     }, { timeout: 3000 });
 
     expect(JSON.parse(putCall[1].body)).toEqual({ sortBy: 'created', sidebarCollapsed: true });
+  });
+});
+
+// The session sidebar's collapse control and ActivityRail's own toggle both
+// used to answer to the accessible name "Collapse sidebar" while doing
+// different things — the rail one only hides its icon labels. Two buttons with
+// one name in one view is ambiguous for anyone driving this by accessible
+// name, screen-reader users first, and it is why E1-S4-AC1's stated query
+// (`getByLabelText(/collapse sidebar/i)`) could not be run unscoped.
+describe('App sidebar control naming', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    fetch.mockClear();
+    fetch.mockImplementation((url) => {
+      if (url === '/api/preferences') {
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }
+      if (typeof url === 'string' && url.includes('/timeline')) {
+        return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // E1-S4-AC1, verified the way the AC actually words it.
+  it('exposes exactly one control named "Collapse sidebar" in the sessions view', async () => {
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('.session-list-header')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    const control = screen.getByLabelText(/collapse sidebar/i);
+    expect(container.querySelector('.session-list-header').contains(control)).toBe(true);
+  });
+
+  // The collapsed counterpart has to be unambiguous too, or the expand tab and
+  // the rail's toggle answer to the same name.
+  it('exposes exactly one control named "Expand sidebar" once collapsed', async () => {
+    const { container } = render(<App />);
+    await waitFor(() => {
+      expect(container.querySelector('.session-list-header')).toBeTruthy();
+    }, { timeout: 3000 });
+
+    fireEvent.click(screen.getByLabelText(/collapse sidebar/i));
+
+    const expand = screen.getByLabelText(/expand sidebar/i);
+    expect(expand).toBe(container.querySelector('.sidebar-expand'));
   });
 });

@@ -13,15 +13,16 @@ const SECTIONS = [
 ];
 
 export default function ActivityRail({ active, onSelect }) {
+  // Named and stored for the rail itself: the session sidebar has its own
+  // collapse control (SessionList) persisted server-side as `sidebarCollapsed`.
+  // Sharing either the accessible name or the key with it made two unrelated
+  // preferences indistinguishable.
   const [isCollapsed, setIsCollapsed] = useState(() => {
-    // Initialize from localStorage
-    const stored = localStorage.getItem('sidebar-collapsed');
-    return stored === 'true';
+    return localStorage.getItem('activity-rail-collapsed') === 'true';
   });
 
-  // Persist to localStorage on toggle
   useEffect(() => {
-    localStorage.setItem('sidebar-collapsed', isCollapsed.toString());
+    localStorage.setItem('activity-rail-collapsed', isCollapsed.toString());
   }, [isCollapsed]);
 
   const handleToggleCollapse = () => {
@@ -37,9 +38,9 @@ export default function ActivityRail({ active, onSelect }) {
         type="button"
         className="activity-rail-toggle"
         onClick={handleToggleCollapse}
-        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={isCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
         aria-expanded={!isCollapsed}
-        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={isCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
       >
         <ChevronLeftIcon className="activity-rail-toggle-icon" aria-hidden="true" />
       </button>

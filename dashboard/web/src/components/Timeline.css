@@ -160,6 +160,19 @@
 }
 .turn-assistant .turn-body { color: var(--text-primary); line-height: 1.6; }
 
+/* Turn bodies render markdown, so their first and last blocks arrive with the
+   UA `<p>`/`<h*>` block margin. Inside `.turn-user`'s padded, tinted band that
+   margin is painted, which turns a one-line prompt into a tall slab of empty
+   tint; on the assistant side it stacks onto `.timeline-root`'s gap and drifts
+   the turns apart. Separation here is the gap's job, so the outer margins go
+   and the inner ones (between paragraphs of the same turn) stay. */
+.turn-body > :first-child {
+  margin-top: 0;
+}
+.turn-body > :last-child {
+  margin-bottom: 0;
+}
+
 .turn-system {
   text-align: center; font-size: 0.75rem; color: var(--text-tertiary);
   padding: 0.25rem 0;

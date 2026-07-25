@@ -1063,3 +1063,65 @@ describe('Timeline Component - Thin per-agent lane guides (E3-S2)', () => {
     expect(declaration(dotBlock, 'border-radius')).toBe('50%');
   });
 });
+
+// E3-S1-AC3 moved the user prompt onto ReactMarkdown + `.markdown-body`, which
+// wraps even a one-line prompt in a `<p>`. Nothing in the app resets the UA
+// paragraph margin (`content.css` styles only pre/code/table under
+// `.markdown-body`, and there is no global reset), so each turn body gained
+// ~1em of margin above and below its content — inside `.turn-user`'s padding
+// and painted by `.turn-role-user`'s tint, which turns a one-line prompt into
+// a tall slab of empty tint. Separation in this transcript is supposed to come
+// from `.timeline-root`'s gap, not from UA margins on the first and last block.
+//
+// jsdom resolves every margin to 0 regardless of the UA stylesheet, so the
+// rule itself is asserted against the source; the rendered half below pins the
+// DOM shape the selector depends on, so a rule that matches nothing cannot
+// pass as a rule that works.
+describe('Timeline Component - Turn bodies do not inherit UA block margins', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const css = fs
+    .readFileSync(path.join(__dirname, './Timeline.css'), 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const oneTurnEach = {
+    id: 'session-1',
+    name: 'Session',
+    project: 'proj',
+    count: 2,
+    agents: [{ name: 'main', lane: 0 }],
+    root: {
+      agent: 'main',
+      lane: 0,
+      firstTs: '2026-07-21T14:00:00.000Z',
+      lastTs: '2026-07-21T14:00:01.000Z',
+      durationMs: 1000,
+      count: 2,
+      events: [
+        { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: 'a one line prompt' },
+        { agent: 'main', lane: 0, role: 'assistant', ts: '2026-07-21T14:00:01.000Z', content: 'a one line reply' }
+      ]
+    }
+  };
+
+  it('wraps both prompt and reply bodies in a paragraph, so the reset has something to match', () => {
+    render(<Timeline timeline={oneTurnEach} />);
+
+    const prompt = document.querySelector('.turn-user .turn-body > p');
+    const reply = document.querySelector('.turn-assistant .turn-body > p');
+    expect(prompt).not.toBeNull();
+    expect(reply).not.toBeNull();
+    expect(prompt.textContent).toBe('a one line prompt');
+    expect(reply.textContent).toBe('a one line reply');
+  });
+
+  it('zeroes the leading and trailing block margin inside .turn-body', () => {
+    const firstChild = css.match(/\.turn-body\s*>\s*:first-child\s*\{([^}]*)\}/);
+    const lastChild = css.match(/\.turn-body\s*>\s*:last-child\s*\{([^}]*)\}/);
+
+    expect(firstChild, 'Timeline.css { .turn-body > :first-child }').not.toBeNull();
+    expect(lastChild, 'Timeline.css { .turn-body > :last-child }').not.toBeNull();
+    expect(firstChild[1]).toMatch(/margin-top\s*:\s*0/);
+    expect(lastChild[1]).toMatch(/margin-bottom\s*:\s*0/);
+  });
+});

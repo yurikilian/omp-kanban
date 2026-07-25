@@ -181,7 +181,9 @@ function ConversationTurn({ ev, refIso }) {
           <span className="turn-who">You</span>
           <span className="turn-time" title={ev.ts}>{formatRelative(ev.ts, refIso)}</span>
         </div>
-        <div className="turn-body turn-user-body">{ev.content}</div>
+        <div className="turn-body turn-user-body markdown-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{ev.content || ''}</ReactMarkdown>
+        </div>
       </div>
     );
   } else if (ev.role === 'assistant') {

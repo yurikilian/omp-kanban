@@ -120,8 +120,9 @@
   gap: 0.5rem;
 }
 
-/* Prose conversation: full width of the transcript panel (not a centered narrow column). */
-.timeline-root { display: flex; flex-direction: column; gap: 1.25rem; }
+/* Prose conversation: a flat document. Full width of the transcript panel (not a
+   centered narrow column), turns separated by whitespace instead of border rules. */
+.timeline-root { display: flex; flex-direction: column; gap: 2rem; }
 .turn-wrap { display: flex; flex-direction: column; }
 
 .turn-head {
@@ -132,16 +133,18 @@
 .turn-time { color: var(--text-tertiary); }
 .turn-tokens { margin-left: auto; font-family: 'Monaco', 'Courier New', monospace; color: var(--text-tertiary); }
 
-/* User prompt: distinct tinted block */
+/* User prompt: padded band, no box. The tint comes from `.turn-role-user`;
+   borders and rounded corners are deliberately absent. */
 .turn-user {
-  background: var(--msg-user-bg);
-  border: 1px solid var(--msg-user-border);
-  border-radius: 8px; padding: 0.875rem 1rem;
+  padding: 0.75rem 1rem;
 }
 .turn-user .turn-who { color: var(--msg-user-text); }
+/* Markdown-rendered like the assistant turn; `pre-wrap` keeps the soft line
+   breaks markdown would otherwise collapse inside a prompt's paragraph. */
 .turn-user-body { white-space: pre-wrap; color: var(--text-primary); line-height: 1.55; }
 
-/* Assistant: flowing prose with per-agent lane accent */
+/* Assistant: flowing prose with a per-agent lane accent. The guide thickness is
+   tokenized in E3-S2; keep the --lane-color plumbing intact. */
 .turn-assistant {
   padding: 0.25rem 0 0.25rem 0.875rem;
   border-left: 3px solid var(--lane-color, var(--border-color));
@@ -168,13 +171,12 @@
 }
 .timeline-section-body .turn-wrap + .turn-wrap { margin-top: 1rem; }
 
-/* Turn groups: bounded blocks of conversational turns */
+/* Turn groups: whitespace-separated blocks of conversational turns. Outer
+   separation comes from .timeline-root's gap, inner rhythm from this gap. */
 .turn-group {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1.5rem;
-  padding: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
+  gap: 1rem;
 }
 
 .turn-group-leading {
@@ -184,18 +186,14 @@
 .turn-group-following {
   display: flex;
   flex-direction: column;
-  margin-top: 0.75rem;
-  padding-left: 1.5rem;
-  border-left: 1px solid var(--border-tertiary, #e5e5e5);
+  gap: 1rem;
 }
 
 /* Tool block: collapsible container for tool steps */
 .tool-block {
   display: flex;
   flex-direction: column;
-  margin-top: 0.75rem;
-  padding-left: 1.5rem;
-  border-left: 1px solid var(--border-tertiary, #e5e5e5);
+  margin-top: 0.25rem;
 }
 
 .tool-block-toggle {
@@ -238,56 +236,27 @@
   margin-top: 0.5rem;
 }
 
-/* ===== Role-based semantic token coloring for turns ===== */
+/* ===== Role-based semantic token coloring for turns =====
+   Roles are signalled by tint and text color only. The 3px `border-left` bars and
+   the `.turn-head` bottom rules that boxed every turn are gone (E3-S1); per-agent
+   identity is carried by the `--lane-color` guide on `.turn-assistant` instead. */
 
-/* User messages: primary blue */
+/* User messages: a subtle primary-tinted band, the transcript's only tint */
 .turn-role-user {
   background-color: color-mix(in srgb, var(--primary) 8%, transparent);
-  border-left: 3px solid var(--primary);
-}
-.turn-role-user .turn-head {
-  border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
-}
-
-/* Assistant messages: neutral gray */
-.turn-role-assistant {
-  background-color: color-mix(in srgb, var(--neutral) 8%, transparent);
-  border-left: 3px solid var(--neutral);
-}
-.turn-role-assistant .turn-head {
-  border-bottom: 1px solid color-mix(in srgb, var(--neutral) 20%, transparent);
-}
-
-/* System messages: subtle tertiary text */
-.turn-role-system {
-  background-color: color-mix(in srgb, var(--text-tertiary) 5%, transparent);
-  border-left: 3px solid var(--text-tertiary);
-  color: var(--text-tertiary);
 }
 
 /* Tool calls: warning orange */
-.turn-role-tool {
-  background-color: color-mix(in srgb, var(--warning) 8%, transparent);
-  border-left: 3px solid var(--warning);
-}
 .turn-role-tool .tool-step-head {
   color: var(--warning);
 }
 
 /* Tool results: success green */
-.turn-role-tool-result {
-  background-color: color-mix(in srgb, var(--success) 8%, transparent);
-  border-left: 3px solid var(--success);
-}
 .turn-role-tool-result .tool-step-head {
   color: var(--success);
 }
 
 /* Error tool steps: danger red, overrides success color */
-.turn-role-error {
-  background-color: color-mix(in srgb, var(--danger) 8%, transparent);
-  border-left: 3px solid var(--danger);
-}
 .turn-role-error .tool-step-head {
   color: var(--danger);
 }

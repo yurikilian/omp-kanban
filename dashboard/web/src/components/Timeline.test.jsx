@@ -762,3 +762,155 @@ describe('Timeline Component - Readability (E3-S4)', () => {
     });
   });
 });
+
+describe('Timeline Component - Flat markdown transcript (E3-S1)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const css = fs
+    .readFileSync(path.join(__dirname, './Timeline.css'), 'utf-8')
+    // Comments may mention borders in prose; only declarations count.
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /** Every declaration block whose selector list contains `selector` exactly. */
+  const declarationsFor = (selector) => {
+    const blocks = [];
+    const rule = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    while ((match = rule.exec(css)) !== null) {
+      const selectors = match[1].split(',').map(s => s.trim().replace(/\s+/g, ' '));
+      if (selectors.includes(selector)) blocks.push(match[2]);
+    }
+    return blocks.join('\n');
+  };
+
+  const declaration = (block, property) => {
+    const match = block.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`));
+    return match ? match[1].trim() : null;
+  };
+
+  it('gives .turn-user no full box border and no border-radius boxing (AC1)', () => {
+    const block = declarationsFor('.turn-user');
+    expect(block).not.toBe('');
+    expect(declaration(block, 'border')).toBeNull();
+    expect(declaration(block, 'border-radius')).toBeNull();
+  });
+
+  it('declares no 1px grid border on the turn/tool containers or role turn-heads (AC2)', () => {
+    const boxed = [
+      '.turn-group',
+      '.turn-group-following',
+      '.tool-block',
+      '.turn-role-user .turn-head',
+      '.turn-role-assistant .turn-head'
+    ];
+    boxed.forEach(selector => {
+      const block = declarationsFor(selector);
+      ['border', 'border-left', 'border-right', 'border-top', 'border-bottom'].forEach(property => {
+        const value = declaration(block, property);
+        expect(value, `${selector} { ${property} }`).toBeNull();
+      });
+    });
+  });
+
+  it('renders a markdown turn body through .markdown-body with no scroll cap of its own (AC3)', () => {
+    const markdown = [
+      '## Findings',
+      '',
+      '- **first** item with `inline code`',
+      '- second item',
+      '',
+      '```js',
+      'const answer = 42;',
+      '```'
+    ].join('\n');
+    const timeline = {
+      id: 'session-1',
+      name: 'Session',
+      project: 'proj',
+      count: 2,
+      agents: [{ name: 'main', lane: 0 }],
+      root: {
+        agent: 'main',
+        lane: 0,
+        firstTs: '2026-07-21T14:00:00.000Z',
+        lastTs: '2026-07-21T14:00:01.000Z',
+        durationMs: 1000,
+        count: 2,
+        events: [
+          { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: 'Investigate' },
+          { agent: 'main', lane: 0, role: 'assistant', ts: '2026-07-21T14:00:01.000Z', content: markdown }
+        ]
+      }
+    };
+    render(<Timeline timeline={timeline} />);
+
+    const body = screen.getByText('Findings').closest('.turn-assistant .markdown-body');
+    expect(body).not.toBeNull();
+    expect(body.querySelector('h2')).not.toBeNull();
+    expect(body.querySelector('ul li strong')).not.toBeNull();
+    expect(body.querySelector('code')).not.toBeNull();
+    expect(body.querySelector('pre code')).not.toBeNull();
+
+    // Flowing at full height: the transcript never makes a turn body its own
+    // scroll container.
+    ['.turn-body', '.turn-user-body', '.turn-assistant .turn-body'].forEach(selector => {
+      const block = declarationsFor(selector);
+      expect(declaration(block, 'max-height'), `${selector} { max-height }`).toBeNull();
+      expect(declaration(block, 'overflow'), `${selector} { overflow }`).toBeNull();
+    });
+  });
+
+  it('renders a user turn body with markdown content through .markdown-body too (AC3)', () => {
+    const markdown = [
+      '### Ask',
+      '',
+      '- run **all** the `unit` tests',
+      '- report back'
+    ].join('\n');
+    const timeline = {
+      id: 'session-1',
+      name: 'Session',
+      project: 'proj',
+      count: 1,
+      agents: [{ name: 'main', lane: 0 }],
+      root: {
+        agent: 'main',
+        lane: 0,
+        firstTs: '2026-07-21T14:00:00.000Z',
+        lastTs: '2026-07-21T14:00:00.000Z',
+        durationMs: 0,
+        count: 1,
+        events: [
+          { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: markdown }
+        ]
+      }
+    };
+    render(<Timeline timeline={timeline} />);
+
+    const body = screen.getByText('Ask').closest('.turn-user .markdown-body');
+    expect(body).not.toBeNull();
+    expect(body.querySelector('h3')).not.toBeNull();
+    expect(body.querySelector('ul li strong')).not.toBeNull();
+    expect(body.querySelector('code')).not.toBeNull();
+    // The raw markdown source must not survive as literal text.
+    expect(screen.queryByText(/### Ask/)).toBeNull();
+  });
+
+  it('separates consecutive turns with .timeline-root gap rather than per-turn boxing (AC4)', () => {
+    const rootBlock = declarationsFor('.timeline-root');
+    expect(declaration(rootBlock, 'gap')).toMatch(/^[\d.]+rem$/);
+
+    // The gap only reads as separation if the turns themselves are unboxed.
+    ['.turn-user', '.turn-group', '.turn-group-following', '.tool-block'].forEach(selector => {
+      const block = declarationsFor(selector);
+      expect(declaration(block, 'border'), `${selector} { border }`).toBeNull();
+      expect(declaration(block, 'border-bottom'), `${selector} { border-bottom }`).toBeNull();
+    });
+
+    // Role tints must not reintroduce a per-turn rule on the prose turns.
+    ['.turn-role-user', '.turn-role-assistant'].forEach(selector => {
+      const block = declarationsFor(selector);
+      expect(declaration(block, 'border-left'), `${selector} { border-left }`).toBeNull();
+    });
+  });
+});

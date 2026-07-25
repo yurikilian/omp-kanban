@@ -61,6 +61,10 @@
   --status-idle: #40c057;
   --status-ended: #868e96;
   --status-plan: #845ef7;
+
+  /* Per-agent transcript lane guides: a hairline rule, not a border box */
+  --lane-guide-width: 0.2em;
+  --lane-dot-size: 0.45em;
 }
 
 /* Dark Mode */

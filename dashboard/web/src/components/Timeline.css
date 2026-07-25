@@ -67,11 +67,11 @@
   gap: 0.5rem;
 }
 
+/* A spawned sub-agent is a lane of its own: same hairline guide as the turns
+   inside it, in that agent's colour. No box, no rounded card. */
 .timeline-nested {
-  border: 1px solid;
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--bg-elevated);
+  border-left: var(--lane-guide-width) solid var(--lane-color, var(--border-color));
+  padding-left: 0.875rem;
 }
 
 .timeline-section-header {
@@ -79,7 +79,7 @@
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -106,11 +106,6 @@
   font-size: 0.75rem;
 }
 
-.timeline-section-body {
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-surface);
-}
-
 .timeline-unlinked {
   margin-top: 0.5rem;
   padding-top: 0.5rem;
@@ -123,7 +118,20 @@
 /* Prose conversation: a flat document. Full width of the transcript panel (not a
    centered narrow column), turns separated by whitespace instead of border rules. */
 .timeline-root { display: flex; flex-direction: column; gap: 2rem; }
-.turn-wrap { display: flex; flex-direction: column; }
+.turn-wrap { display: flex; flex-direction: column; position: relative; }
+
+/* Each event is marked on its agent's lane by a small dot, straddling the
+   guide line so prompt, reply and tool rows read as beads on one thread. */
+.turn-dot {
+  position: absolute;
+  top: 0.45rem;
+  left: calc(var(--lane-guide-width) / 2);
+  transform: translateX(-50%);
+  width: var(--lane-dot-size);
+  height: var(--lane-dot-size);
+  border-radius: 50%;
+  background: var(--lane-color, var(--border-color));
+}
 
 .turn-head {
   display: flex; align-items: baseline; gap: 0.75rem;
@@ -135,19 +143,20 @@
 
 /* User prompt: padded band, no box. The tint comes from `.turn-role-user`;
    borders and rounded corners are deliberately absent. */
+/* Text aligns with the assistant lane's text so the dots form one column. */
 .turn-user {
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 1rem 0.75rem calc(var(--lane-guide-width) + 0.875rem);
 }
 .turn-user .turn-who { color: var(--msg-user-text); }
 /* Markdown-rendered like the assistant turn; `pre-wrap` keeps the soft line
    breaks markdown would otherwise collapse inside a prompt's paragraph. */
 .turn-user-body { white-space: pre-wrap; color: var(--text-primary); line-height: 1.55; }
 
-/* Assistant: flowing prose with a per-agent lane accent. The guide thickness is
-   tokenized in E3-S2; keep the --lane-color plumbing intact. */
+/* Assistant: flowing prose with a per-agent lane accent — a ~0.2em hairline in
+   the agent's `--lane-color`, tokenized so the thickness is stated once. */
 .turn-assistant {
   padding: 0.25rem 0 0.25rem 0.875rem;
-  border-left: 3px solid var(--lane-color, var(--border-color));
+  border-left: var(--lane-guide-width) solid var(--lane-color, var(--border-color));
 }
 .turn-assistant .turn-body { color: var(--text-primary); line-height: 1.6; }
 
@@ -167,7 +176,7 @@
 .timeline-section-body {
   display: flex;
   flex-direction: column;
-  padding: 0.75rem;
+  padding: 0.5rem 0;
 }
 .timeline-section-body .turn-wrap + .turn-wrap { margin-top: 1rem; }
 

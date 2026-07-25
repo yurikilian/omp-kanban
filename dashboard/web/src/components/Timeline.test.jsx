@@ -914,3 +914,152 @@ describe('Timeline Component - Flat markdown transcript (E3-S1)', () => {
     });
   });
 });
+
+describe('Timeline Component - Thin per-agent lane guides (E3-S2)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const themeCss = stripComments(fs.readFileSync(path.join(__dirname, '../theme.css'), 'utf-8'));
+  const css = stripComments(fs.readFileSync(path.join(__dirname, './Timeline.css'), 'utf-8'));
+
+  /** Every declaration block whose selector list contains `selector` exactly. */
+  const declarationsFor = (selector) => {
+    const blocks = [];
+    const rule = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    while ((match = rule.exec(css)) !== null) {
+      const selectors = match[1].split(',').map(s => s.trim().replace(/\s+/g, ' '));
+      if (selectors.includes(selector)) blocks.push(match[2]);
+    }
+    return blocks.join('\n');
+  };
+
+  const declaration = (block, property) => {
+    const match = block.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`));
+    return match ? match[1].trim() : null;
+  };
+
+  // main (lane 0) prompts, replies, then spawns `scout` (lane 1) which replies too.
+  const nestedTimeline = () => ({
+    id: 'session-1',
+    name: 'Session',
+    project: 'proj',
+    count: 4,
+    agents: [{ name: 'main', lane: 0 }, { name: 'scout', lane: 1 }],
+    root: {
+      agent: 'main',
+      lane: 0,
+      firstTs: '2026-07-21T14:00:00.000Z',
+      lastTs: '2026-07-21T14:00:03.000Z',
+      durationMs: 3000,
+      count: 4,
+      events: [
+        { agent: 'main', lane: 0, role: 'user', ts: '2026-07-21T14:00:00.000Z', content: 'Investigate' },
+        {
+          agent: 'main',
+          lane: 0,
+          role: 'assistant',
+          ts: '2026-07-21T14:00:01.000Z',
+          content: 'Delegating to scout',
+          children: [
+            {
+              agent: 'scout',
+              lane: 1,
+              firstTs: '2026-07-21T14:00:02.000Z',
+              lastTs: '2026-07-21T14:00:03.000Z',
+              durationMs: 1000,
+              count: 2,
+              events: [
+                { agent: 'scout', lane: 1, role: 'user', ts: '2026-07-21T14:00:02.000Z', content: 'Find the caller' },
+                { agent: 'scout', lane: 1, role: 'assistant', ts: '2026-07-21T14:00:03.000Z', content: 'Found it' }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  it('tokenizes the ~0.2em lane guide thickness and the dot diameter in theme.css :root (AC1)', () => {
+    const root = themeCss.match(/:root\s*\{([\s\S]*?)\}/);
+    expect(root).not.toBeNull();
+    const guide = root[1].match(/--lane-guide-width:\s*([^;]+);/);
+    expect(guide, 'theme.css :root { --lane-guide-width }').not.toBeNull();
+    const em = Number(guide[1].trim().replace(/em$/, ''));
+    expect(guide[1].trim()).toMatch(/em$/);
+    expect(em).toBeGreaterThan(0.1);
+    expect(em).toBeLessThanOrEqual(0.25);
+
+    const dot = root[1].match(/--lane-dot-size:\s*([^;]+);/);
+    expect(dot, 'theme.css :root { --lane-dot-size }').not.toBeNull();
+    expect(dot[1].trim()).toMatch(/em$/);
+  });
+
+  it('draws the .turn-assistant guide at the tokenized thickness in --lane-color, never 3px (AC2)', () => {
+    const block = declarationsFor('.turn-assistant');
+    expect(block).not.toBe('');
+    const borderLeft = declaration(block, 'border-left');
+    expect(borderLeft).not.toBeNull();
+    expect(borderLeft).toContain('var(--lane-guide-width)');
+    expect(borderLeft).toContain('var(--lane-color');
+    expect(borderLeft).not.toMatch(/\dpx/);
+
+    render(<Timeline timeline={nestedTimeline()} />);
+    const assistant = document.querySelector('.turn-assistant');
+    expect(assistant.style.getPropertyValue('--lane-color')).not.toBe('');
+  });
+
+  it('gives every agent lane its own inline --lane-color from LANE_COLORS, main = LANE_COLORS[0] (AC3)', () => {
+    render(<Timeline timeline={nestedTimeline()} />);
+
+    const mainTurn = document.querySelector('.timeline-root > .turn-group .turn-assistant');
+    expect(mainTurn.style.getPropertyValue('--lane-color')).toBe('#3b82f6');
+
+    // The nested sub-agent section is a lane in its own right, tinted before it
+    // is even expanded.
+    const nested = document.querySelector('.timeline-nested');
+    const subColor = nested.style.getPropertyValue('--lane-color');
+    expect(subColor).toBe('#22c55e');
+    expect(subColor).not.toBe(mainTurn.style.getPropertyValue('--lane-color'));
+
+    fireEvent.click(screen.getByText('scout'));
+    const subTurn = nested.querySelector('.turn-assistant');
+    expect(subTurn.style.getPropertyValue('--lane-color')).toBe(subColor);
+  });
+
+  it('replaces the nested section box with a thin lane guide in the agent colour (AC3)', () => {
+    const block = declarationsFor('.timeline-nested');
+    expect(declaration(block, 'border')).toBeNull();
+    expect(declaration(block, 'border-radius')).toBeNull();
+    const borderLeft = declaration(block, 'border-left');
+    expect(borderLeft).toContain('var(--lane-guide-width)');
+    expect(borderLeft).toContain('var(--lane-color');
+  });
+
+  it('marks each event on the lane with a small dot in that lane colour (AC4)', () => {
+    render(<Timeline timeline={nestedTimeline()} />);
+
+    // main renders two events (prompt + reply); each gets exactly one dot.
+    const rootWraps = document.querySelectorAll('.timeline-root .turn-wrap');
+    expect(rootWraps.length).toBe(2);
+    rootWraps.forEach(wrap => {
+      expect(wrap.querySelectorAll(':scope > .turn-dot').length).toBe(1);
+      expect(wrap.style.getPropertyValue('--lane-color')).toBe('#3b82f6');
+    });
+
+    fireEvent.click(screen.getByText('scout'));
+    const subWraps = document.querySelectorAll('.timeline-nested .turn-wrap');
+    expect(subWraps.length).toBe(2);
+    subWraps.forEach(wrap => {
+      expect(wrap.querySelectorAll(':scope > .turn-dot').length).toBe(1);
+      expect(wrap.style.getPropertyValue('--lane-color')).toBe('#22c55e');
+    });
+
+    const dotBlock = declarationsFor('.turn-dot');
+    expect(dotBlock).not.toBe('');
+    expect(declaration(dotBlock, 'background')).toContain('var(--lane-color');
+    expect(declaration(dotBlock, 'width')).toContain('var(--lane-dot-size)');
+    expect(declaration(dotBlock, 'height')).toContain('var(--lane-dot-size)');
+    expect(declaration(dotBlock, 'border-radius')).toBe('50%');
+  });
+});

@@ -494,26 +494,21 @@ describe('Theme System', () => {
   });
 });
 
-// Persisted-preference edge cases.
+// The sidebar used to be a drag-resizable column: `sidebarWidth` state seeded
+// from 25% of the viewport, a clamp to 25-40%, mouse handlers behind a
+// `.sidebar-resize-handle`, and the width persisted through /api/preferences.
+// A stored 860px on a 1365px viewport squeezed the transcript to nothing.
 //
-// A stored `sidebarWidth` was applied verbatim on load while only the drag
-// handler clamped to 25-40% of the viewport. A saved 860px on a 1365px viewport
-// therefore consumed the layout and the session-detail pane rendered 0px wide —
-// the entire transcript was invisible. Every existing test passed, because they
-// all exercised the default width and never a persisted out-of-bounds one.
-//
-// The contract: a width restored from the server is clamped to the same bounds
-// the drag handler enforces, so a bad stored value can never hide the content.
-describe('App persisted sidebar width', () => {
-  const VIEWPORT = 1365;
-  const MIN = VIEWPORT * 0.25;
-  const MAX = VIEWPORT * 0.4;
+// The contract now: the sidebar is a fixed 280px column. There is no handle,
+// no clamping, and no persisted width — so no stored value can reshape the
+// layout at all.
+describe('App fixed-width sidebar', () => {
+  const SIDEBAR_WIDTH = '280px';
 
-  const renderWithStoredWidth = async (sidebarWidth) => {
-    window.innerWidth = VIEWPORT;
+  const renderWithPrefs = async (prefs = {}) => {
     fetch.mockImplementation((url) => {
       if (url === '/api/preferences') {
-        return Promise.resolve({ ok: true, json: async () => ({ sidebarWidth }) });
+        return Promise.resolve({ ok: true, json: async () => prefs });
       }
       if (typeof url === 'string' && url.includes('/timeline')) {
         return Promise.resolve({ ok: true, json: async () => EMPTY_TIMELINE });
@@ -525,30 +520,82 @@ describe('App persisted sidebar width', () => {
     await waitFor(() => {
       expect(container.querySelector('.sidebar')).toBeTruthy();
     }, { timeout: 3000 });
-    return container.querySelector('.sidebar');
+    return container;
   };
 
-  it('clamps an oversized stored width so the content pane keeps room', async () => {
-    const sidebar = await renderWithStoredWidth(860);
-    await waitFor(() => {
-      expect(parseFloat(sidebar.style.width)).toBeLessThanOrEqual(MAX);
-    }, { timeout: 3000 });
-    expect(parseFloat(sidebar.style.width)).toBeGreaterThanOrEqual(MIN);
+  const readSource = (file) => {
+    const fs = require('fs');
+    const path = require('path');
+    return fs.readFileSync(path.join(__dirname, file), 'utf8');
+  };
+
+  beforeEach(() => {
+    fetch.mockClear();
   });
 
-  it('clamps an undersized stored width up to the minimum', async () => {
-    const sidebar = await renderWithStoredWidth(10);
-    await waitFor(() => {
-      expect(parseFloat(sidebar.style.width)).toBeGreaterThanOrEqual(MIN);
-    }, { timeout: 3000 });
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('honors an in-bounds stored width unchanged', async () => {
-    const inBounds = Math.round(VIEWPORT * 0.3);
-    const sidebar = await renderWithStoredWidth(inBounds);
-    await waitFor(() => {
-      expect(parseFloat(sidebar.style.width)).toBe(inBounds);
+  // E1-S2-AC1
+  it('renders .sidebar at a fixed 280px with no resize-driven inline width', async () => {
+    window.innerWidth = 1365;
+    const container = await renderWithPrefs();
+    const sidebar = container.querySelector('.sidebar');
+
+    expect(window.getComputedStyle(sidebar).width).toBe(SIDEBAR_WIDTH);
+    expect(sidebar.style.width).toBe('');
+  });
+
+  // E1-S2-AC2
+  it('renders no resize handle in the layout shell', async () => {
+    const container = await renderWithPrefs();
+    expect(container.querySelector('.sidebar-resize-handle')).toBeNull();
+  });
+
+  // E1-S2-AC3
+  it('ignores a stored sidebarWidth and omits it from the PUT /api/preferences body', async () => {
+    window.innerWidth = 1365;
+    const container = await renderWithPrefs({ sidebarWidth: 860 });
+    const sidebar = container.querySelector('.sidebar');
+
+    expect(window.getComputedStyle(sidebar).width).toBe(SIDEBAR_WIDTH);
+    expect(sidebar.style.width).toBe('');
+
+    // The save effect is gated on the GET round-trip having settled, so drive
+    // a save the way a user does: change the sort order, then let the debounce
+    // elapse.
+    const sortButtons = await waitFor(() => {
+      const buttons = container.querySelectorAll('.session-sort-button');
+      expect(buttons.length).toBe(2);
+      return buttons;
     }, { timeout: 3000 });
+
+    fireEvent.click(sortButtons[1]); // "Recently modified"
+
+    let putCall;
+    await waitFor(() => {
+      putCall = fetch.mock.calls.find(
+        ([url, init]) => url === '/api/preferences' && init?.method === 'PUT'
+      );
+      expect(putCall).toBeTruthy();
+    }, { timeout: 3000 });
+
+    expect(putCall[1].body).not.toContain('sidebarWidth');
+    expect(JSON.parse(putCall[1].body)).not.toHaveProperty('sidebarWidth');
+  });
+
+  // E1-S2-AC4
+  it('ships no drag-resize machinery in the shell source or stylesheet', () => {
+    const jsx = readSource('./App.jsx');
+    const css = readSource('./App.css');
+
+    for (const symbol of ['clampSidebarWidth', 'handleResizeStart', 'handleResizeMove', 'handleResizeEnd', 'resizingRef', 'sidebarWidth']) {
+      expect(jsx).not.toContain(symbol);
+    }
+    expect(jsx).not.toContain('sidebar-resize-handle');
+    expect(css).not.toContain('sidebar-resize-handle');
+    expect(css).toMatch(/\.sidebar\s*\{[^}]*width:\s*280px/);
   });
 });
 
@@ -615,7 +662,7 @@ describe('App plan panel removal', () => {
     }, { timeout: 3000 });
 
     const body = JSON.parse(putCall[1].body);
-    expect(body).toEqual({ sidebarWidth: expect.any(Number), sortBy: 'modified' });
+    expect(body).toEqual({ sortBy: 'modified' });
     expect(putCall[1].body).not.toContain('planPanelCollapsed');
     expect(body).not.toHaveProperty('planPanelCollapsed');
   });

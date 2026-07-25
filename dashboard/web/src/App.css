@@ -36,23 +36,10 @@
 
 .sidebar {
   flex: 0 0 auto;
-  min-width: 25%;
+  width: 280px;
   background: var(--bg-surface);
   border-right: 1px solid var(--border-color);
   overflow: hidden;
-}
-
-.sidebar-resize-handle {
-  flex: 0 0 auto;
-  width: 4px;
-  cursor: col-resize;
-  background: transparent;
-  border-right: 1px solid transparent;
-}
-
-.sidebar-resize-handle:hover,
-.sidebar-resize-handle:active {
-  border-right-color: var(--msg-user-border);
 }
 
 .content {

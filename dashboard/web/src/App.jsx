@@ -19,28 +19,20 @@ function AppContent() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => Math.round(window.innerWidth * 0.25));
   const [sortBy, setSortBy] = useState('created'); // 'created' | 'modified'
   const [timelineReloadToken, setTimelineReloadToken] = useState(0);
-  const resizingRef = useRef(false);
 
   useEffect(() => {
     fetchSessions();
   }, []);
 
-  // ---- Preferences (sidebar width / sort order), persisted
-  // via GET/PUT /api/preferences instead of staying purely in-memory.
+  // ---- Preferences (sort order), persisted via GET/PUT /api/preferences
+  // instead of staying purely in-memory.
   // `prefsLoadedRef` gates the save effect so the initial state defaults
   // (before the GET response lands) never overwrite whatever was already
   // saved server-side.
   const prefsLoadedRef = useRef(false);
   const prefsSaveTimeoutRef = useRef(null);
-  // Clamp sidebar width to valid range (25-40% of viewport)
-  const clampSidebarWidth = (width) => {
-    const minWidth = window.innerWidth * 0.25;
-    const maxWidth = window.innerWidth * 0.4;
-    return Math.min(Math.max(width, minWidth), maxWidth);
-  };
 
 
   useEffect(() => {
@@ -49,7 +41,6 @@ function AppContent() {
       .then((res) => (res.ok ? res.json() : {}))
       .then((prefs) => {
         if (cancelled || !prefs) return;
-        if (typeof prefs.sidebarWidth === 'number') setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
         if (prefs.sortBy === 'created' || prefs.sortBy === 'modified') setSortBy(prefs.sortBy);
       })
       .catch(() => {})
@@ -68,11 +59,11 @@ function AppContent() {
       fetch('/api/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sidebarWidth, sortBy })
+        body: JSON.stringify({ sortBy })
       }).catch(() => {});
     }, PREFS_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(prefsSaveTimeoutRef.current);
-  }, [sidebarWidth, sortBy]);
+  }, [sortBy]);
 
   // Refs to avoid stale closure issues in the event listener
   const selectedSessionRef = useRef(selectedSession);
@@ -185,36 +176,6 @@ function AppContent() {
     await refreshSessionsPreservingSelection();
   };
 
-  const RAIL_WIDTH = 64;
-
-  const handleResizeMove = (event) => {
-    if (!resizingRef.current) return;
-    const minWidth = window.innerWidth * 0.25;
-    const maxWidth = window.innerWidth * 0.4;
-    const next = Math.min(Math.max(event.clientX - RAIL_WIDTH, minWidth), maxWidth);
-    setSidebarWidth(next);
-  };
-
-  const handleResizeEnd = () => {
-    resizingRef.current = false;
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', handleResizeEnd);
-  };
-
-  const handleResizeStart = (event) => {
-    event.preventDefault();
-    resizingRef.current = true;
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-  };
-
-  useEffect(() => {
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-  }, []);
-
   const handleDeleteSession = async (session) => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
@@ -262,7 +223,7 @@ function AppContent() {
           <ComingSoon {...comingSoon} />
         ) : (
           <>
-            <aside className="sidebar" style={{ width: sidebarWidth }}>
+            <aside className="sidebar">
               <SessionList
                 sessions={sortedSessions}
                 selectedSession={selectedSession}
@@ -273,7 +234,6 @@ function AppContent() {
                 onSortChange={handleSortChange}
               />
             </aside>
-            <div className="sidebar-resize-handle" onMouseDown={handleResizeStart} />
             <main className="content">
               {selectedSession ? (
                 <SessionDetail

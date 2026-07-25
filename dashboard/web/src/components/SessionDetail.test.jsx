@@ -3,6 +3,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 
 import SessionDetail from './SessionDetail';
+import Skeleton from './Skeleton';
 
 global.fetch = vi.fn();
 
@@ -122,6 +123,50 @@ describe('SessionDetail (read-only)', () => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/sessions/sess-2/timeline')
       );
+    });
+  });
+
+  // E4-S2-AC1
+  it('renders KPI and timeline placeholders instead of "Loading timeline..." while the timeline is in flight', () => {
+    global.fetch.mockReturnValueOnce(new Promise(() => {}));
+
+    const { container } = render(<SessionDetail session={{ id: 'sess-1', name: 'Pending' }} />);
+
+    const messages = container.querySelector('.session-detail-messages');
+    expect(messages.querySelectorAll('.session-detail-skeleton-kpi-card').length).toBeGreaterThan(0);
+    expect(messages.querySelectorAll('.session-detail-skeleton-turn').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Loading timeline...')).not.toBeInTheDocument();
+  });
+
+  // E4-S2-AC2
+  it('replaces the placeholders with the KPI cards and timeline once the fetch resolves', async () => {
+    let resolveFetch;
+    global.fetch.mockReturnValueOnce(new Promise((resolve) => { resolveFetch = resolve; }));
+
+    const { container } = render(<SessionDetail session={{ id: 'sess-1', name: 'Resolving' }} />);
+    expect(container.querySelector('.session-detail-skeleton')).toBeInTheDocument();
+
+    resolveFetch({ ok: true, json: async () => EMPTY_TIMELINE });
+
+    await waitFor(() => {
+      expect(container.querySelector('.timeline')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('group', { name: 'Session statistics' })).toBeInTheDocument();
+    expect(container.querySelector('.session-detail-skeleton')).not.toBeInTheDocument();
+  });
+
+  // E4-S2-AC3
+  it('builds the detail placeholders from the shared skeleton primitive', () => {
+    const shared = render(<Skeleton />).container.firstChild.className;
+
+    global.fetch.mockReturnValueOnce(new Promise(() => {}));
+    const { container } = render(<SessionDetail session={{ id: 'sess-1', name: 'Pending' }} />);
+
+    const placeholders = container.querySelectorAll('.session-detail-skeleton .skeleton');
+    expect(placeholders.length).toBeGreaterThan(0);
+    placeholders.forEach((el) => {
+      expect(el.classList.contains(shared)).toBe(true);
     });
   });
 });

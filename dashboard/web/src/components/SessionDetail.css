@@ -74,6 +74,70 @@
   padding: 0.5rem 0;
 }
 
+/* Loading placeholders. Geometry mirrors .session-kpi-cards and a transcript
+   turn so the real content drops in without shifting the scroll position; the
+   pulse itself comes from the shared .skeleton primitive. */
+.session-detail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.session-detail-skeleton-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.session-detail-skeleton-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.65rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.session-detail-skeleton-kpi-icon {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.session-detail-skeleton-kpi-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-detail-skeleton-kpi-value {
+  height: 0.95rem;
+}
+
+.session-detail-skeleton-kpi-label {
+  height: 0.6875rem;
+}
+
+.session-detail-skeleton-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+}
+
+.session-detail-skeleton-turn-label {
+  height: 0.75rem;
+  margin-bottom: 0.15rem;
+}
+
+.session-detail-skeleton-turn-line {
+  height: 0.7rem;
+}
+
 .session-detail-live-section {
   display: flex;
   flex-direction: column;

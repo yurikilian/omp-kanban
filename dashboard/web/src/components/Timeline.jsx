@@ -212,7 +212,8 @@ function ConversationTurn({ ev, refIso }) {
     turn = null;
   }
   return (
-    <div className="turn-wrap">
+    <div className="turn-wrap" style={{ '--lane-color': color }}>
+      {turn && <span className="turn-dot" aria-hidden="true" />}
       {turn}
       {ev.children && ev.children.length > 0 && (
         <div className="timeline-children">
@@ -334,7 +335,7 @@ function AgentSection({ node, refIso, isRoot = false }) {
   }
 
   return (
-    <div className="timeline-section timeline-nested" style={{ borderColor: color }}>
+    <div className="timeline-section timeline-nested" style={{ '--lane-color': color }}>
       <button
         type="button"
         className={`timeline-section-header ${open ? 'open' : ''}`}

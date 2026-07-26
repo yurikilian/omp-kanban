@@ -26,4 +26,26 @@ describe("OMP Prism typography (DESIGN-SYSTEM.md section 15)", () => {
     expect(getComputedStyle(bodyText).fontFamily).toContain("Geist Sans");
     expect(getComputedStyle(codeBlock).fontFamily).toContain("Geist Mono");
   });
+
+  it("[E2-S1-AC5] resolves body, secondary metadata, and long-form response text to their section 15 role sizes", () => {
+    const { container } = render(
+      <div>
+        <p className="typography-body">Readable interface text</p>
+        <span className="typography-metadata">Secondary metadata</span>
+        <article className="typography-response">Long-form agent response</article>
+      </div>,
+    );
+
+    const bodyText = container.querySelector("p.typography-body");
+    const metadata = container.querySelector("span.typography-metadata");
+    const response = container.querySelector("article.typography-response");
+
+    if (!bodyText || !metadata || !response) {
+      throw new Error("typography size probes did not render");
+    }
+
+    expect(getComputedStyle(bodyText).fontSize).toBe("0.875rem");
+    expect(getComputedStyle(metadata).fontSize).toBe("0.8125rem");
+    expect(getComputedStyle(response).fontSize).toBe("1rem");
+  });
 });

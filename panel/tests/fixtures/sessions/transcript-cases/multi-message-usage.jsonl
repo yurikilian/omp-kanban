@@ -1,0 +1,5 @@
+{"type":"title","title":"Multi message usage","updatedAt":"2026-02-01T00:00:00.100Z"}
+{"type":"session","version":3,"id":"tc-multi","timestamp":"2026-02-01T00:00:00.000Z","cwd":"/work/tc"}
+{"type":"message","id":"a1","parentId":null,"timestamp":"2026-02-01T00:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"First."}],"usage":{"input":100,"output":10,"cost":{"total":0.001}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"tc1","toolName":"bash","startedAt":"2026-02-01T00:01:30.000Z","intent":"do a thing"},"id":"c1","parentId":"a1","timestamp":"2026-02-01T00:01:30.000Z"}
+{"type":"message","id":"a2","parentId":"c1","timestamp":"2026-02-01T00:02:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Second."}],"usage":{"input":50,"output":5,"cost":{"total":0.0005}}}}

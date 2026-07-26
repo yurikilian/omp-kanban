@@ -4,19 +4,59 @@ import { useEffect, useState } from "react";
 import type { SessionSummary } from "@/server/sessions/types";
 import { SessionList } from "./session-list";
 
+type SessionListState =
+  | { status: "loading" }
+  | { status: "ready"; sessions: SessionSummary[] }
+  | { status: "error"; message: string };
+
+function errorMessageFromResponseBody(body: unknown, status: number): string {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "string" &&
+    body.error
+  ) {
+    return body.error;
+  }
+
+  return `The sessions request failed with status ${status}.`;
+}
+
+
 export function SessionListStates() {
-  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [state, setState] = useState<SessionListState>({ status: "loading" });
 
   useEffect(() => {
-    void fetch("/api/sessions", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return;
-        setSessions((await response.json()) as SessionSummary[]);
-      })
-      .catch(() => {});
+    async function loadSessions() {
+      try {
+        const response = await fetch("/api/sessions", { cache: "no-store" });
+
+        if (!response.ok) {
+          const body: unknown = await response.json().catch(() => undefined);
+          setState({
+            status: "error",
+            message: errorMessageFromResponseBody(body, response.status),
+          });
+          return;
+        }
+
+        setState({
+          status: "ready",
+          sessions: (await response.json()) as SessionSummary[],
+        });
+      } catch (error) {
+        setState({
+          status: "error",
+          message: error instanceof Error && error.message ? error.message : "The sessions request failed.",
+        });
+      }
+    }
+
+    void loadSessions();
   }, []);
 
-  if (sessions === null) {
+  if (state.status === "loading") {
     return (
       <section role="status" aria-live="polite" className="rounded-lg border border-border px-6 py-8 text-center">
         Loading sessions
@@ -24,7 +64,17 @@ export function SessionListStates() {
     );
   }
 
-  if (sessions.length === 0) {
+  if (state.status === "error") {
+    return (
+      <section role="alert" className="rounded-lg border border-destructive/50 bg-destructive/10 px-6 py-8 text-center">
+        <h2 className="font-medium text-foreground">Could not load sessions</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{state.message}</p>
+        <p className="mt-3 text-sm text-muted-foreground">No previously loaded session data is available.</p>
+      </section>
+    );
+  }
+
+  if (state.sessions.length === 0) {
     return (
       <section role="status" className="rounded-lg border border-dashed border-border px-6 py-8 text-center">
         <h2 className="font-medium text-foreground">No recorded sessions</h2>
@@ -33,5 +83,5 @@ export function SessionListStates() {
     );
   }
 
-  return <SessionList sessions={sessions} />;
+  return <SessionList sessions={state.sessions} />;
 }

@@ -41,4 +41,18 @@ describe("SessionListStates", () => {
     expect(screen.getByText("Start an Oh My Pi session to see it here.")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
+
+  it("explains an unreadable sessions root and that no existing data is usable (E3-S1-AC5)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "EACCES: permission denied, scandir ~/.omp/agent/sessions" }, 500),
+    );
+
+    render(<SessionListStates />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not load sessions");
+    expect(alert).toHaveTextContent("EACCES: permission denied, scandir ~/.omp/agent/sessions");
+    expect(alert).toHaveTextContent("No previously loaded session data is available.");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
 });

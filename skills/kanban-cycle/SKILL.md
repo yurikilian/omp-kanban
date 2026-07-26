@@ -15,6 +15,11 @@ the agents that try to break it — fix a bug directly because it looks small an
 you have collapsed that separation, leaving the review column verifying your work
 with your own framing.
 
+### Subagent Polling & Timeout Limits
+*   **Maximum Polls:** You are strictly limited to a maximum of 3 `wait` polls per active subagent task.
+*   **Timeout Cancellation:** If a subagent does not return a state update (e.g., "IN_PROGRESS" or "COMPLETED") after the 3rd poll, you must immediately cancel the stalled subagent task.
+*   **Circuit Breaker:** If a task fails, you may spawn exactly one retry. If the retry also fails or times out, you must immediately halt the kanban cycle and request manual intervention. Do not endlessly spawn retries.
+
 ## Operating principles
 
 Lean, applied as mechanism rather than decoration. Each changes a specific

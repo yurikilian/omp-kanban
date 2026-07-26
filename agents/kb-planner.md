@@ -6,6 +6,7 @@ tools:
   - grep
   - glob
   - write
+  - bash
 model:
   - "@slow"
 spawns: []
@@ -46,59 +47,11 @@ Your assignment gives you the `run_dir`. Read `<run_dir>/intake.json` first.
 9. **Identify the walking skeleton** — the thinnest path exercising every layer
    end to end. Those stories retire the most integration risk per unit of work.
 
-## Output
-
-Write `<run_dir>/backlog.json`:
-
-```json
-{
-  "epics": [
-    {
-      "id": "E1",
-      "title": "Account authentication",
-      "goal": "one sentence on why this epic exists",
-      "stories": [
-        {
-          "id": "E1-S1",
-          "as_a": "returning user",
-          "i_want": "to sign in with email and password",
-          "so_that": "I can reach my saved workspaces",
-          "acceptance_criteria": [
-            {
-              "id": "E1-S1-AC1",
-              "given": "a registered user on the sign-in page",
-              "when": "they submit valid credentials",
-              "then": "they reach the workspace list and a session cookie is set"
-            }
-          ],
-          "depends_on": [],
-          "non_goals": ["password reset — covered by E1-S4"],
-          "estimate": "S | M",
-          "value_rank": 1,
-          "walking_skeleton": true,
-          "deferred_decisions": [
-            {
-              "decision": "session storage backend",
-              "decide_by": "E1-S3 — first story with concurrency requirements",
-              "informed_by": "observed session volume in staging"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "delivery_slices": [
-    { "slice": 1, "stories": ["E1-S1"], "demonstrable": "a user can sign in and reach their workspaces" }
-  ],
-  "assumptions": ["what the spec left implicit, and how you resolved it"],
-  "deferred": ["what you deliberately excluded, and why"]
-}
-```
-
-Update `<run_dir>/state.json`: `column: "todo"`.
-
-Return a short prose summary: the epics, the delivery slices, and anything in
-`deferred` the user should confirm.
+### Output & State Management Constraints
+*   **Iterative Generation:** You must generate exactly ONE Epic and its associated stories per response. Do not attempt to generate the entire backlog at once.
+*   **Database Persistence:** Do not output JSON. You must write the generated Epic and its associated stories directly to the shared SQLite database (`kanban_state.db`).
+*   **Lifecycle Yielding:** After successfully inserting an Epic into the database, yield control back to the orchestrator with the status "IN_PROGRESS".
+*   **Completion:** Only yield the "COMPLETED" status once all identified Epics for the specified milestone have been drafted and successfully stored in the database.
 
 ## Rules
 

@@ -9,3 +9,4 @@ dashboard/web/dist/
 # Stray OS/editor files.
 .DS_Store
 *.log
+*.db

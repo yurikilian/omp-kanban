@@ -33,33 +33,84 @@ and stop. That is the correct output, not a failure.
 
 ## Input
 
-Everything under the `run_dir` given in your assignment, plus git history on the
-feature and task branches. Read artifacts; do not re-derive anything. Never
-re-run tests, re-review code, or re-analyze the implementation — redoing
-completed work to measure it is itself the waste you are looking for.
+The run database (`<run_dir>/kanban.db`) is the primary source, plus git
+history on the feature and task branches. Query the run database — never read
+it as a file. Use `python3 "$RUN_DIR/kb_db.py" get <view>` for the named views
+(`board`, `intake`, `backlog`, `acs`, `plan-check`, `layer`, `task`, `findings`,
+`fixes`, `verdict`, `qa`, `traceability`, `flow-metrics`, `process-notes`,
+`tables`), and `python3 "$RUN_DIR/kb_db.py" sql "<SELECT ...>"` as the
+read-only escape hatch for anything a named view does not cover — a single
+`SELECT`/`WITH` statement only, enforced by the helper. Do not re-derive
+anything the database or git history already records. Never re-run tests,
+re-review code, or re-analyze the implementation — redoing completed work to
+measure it is itself the waste you are looking for.
 
 ## What to look for
 
-**Rework.** Read `review/verdict.json`. For each loop, establish where the defect
-entered — check the critic's `root_causes` rather than accepting them. Was the AC
-ambiguous? The task oversized? Did `files_touched` under-predict? Did a mock hide
-the behavior? Count the cost: fixes applied, rounds repeated, tasks touched.
+**Rework.** Query `python3 "$RUN_DIR/kb_db.py" get verdict` (returns all
+`verdicts` rows, one per phase/rework_count). For each loop, establish where
+the defect entered — query `python3 "$RUN_DIR/kb_db.py" get process-notes`
+(surfaces `root_causes` joined with prevention/entered_at) rather than
+accepting the critic's stated cause at face value, or run a direct `sql`
+query against `root_causes` (columns: `cause`, `entered_at`, `prevention`,
+joined to `findings` via `root_cause_findings`) if you need more detail. Was
+the AC ambiguous? The task oversized? Did the claimed files under-predict the
+actual change? Did a mock hide the behavior? Count the cost: fixes applied,
+rounds repeated, tasks touched.
 
-**Batch size.** Compare each `progress/*.json` `files_changed` against the
-predicted `files_touched` in `todo.json`. A task substantially exceeding its
-prediction was oversized, and oversized tasks are the upstream cause of most
-other waste.
+**Batch size.** This is one SQL query, since both predicted and actual files
+touched live in `task_files`, distinguished by `role` (`'claimed'` =
+predicted, `'changed'` = actual):
 
-**Flow and serialization.** Check `layers` in `todo.json` against what actually
-happened. Look for `parallel_safe: false` tasks whose `files_changed` turned out
-not to overlap any sibling in their layer — each unnecessary serialization cost
-wall-clock time for nothing, and a pattern of them means the decomposer is being
-too conservative about a particular area.
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "
+  SELECT c.task_id,
+         (SELECT COUNT(*) FROM task_files WHERE task_id=c.task_id AND role='claimed') AS claimed,
+         (SELECT COUNT(*) FROM task_files WHERE task_id=c.task_id AND role='changed') AS changed
+    FROM (SELECT DISTINCT task_id FROM task_files) c
+"
+```
 
-The opposite pattern matters more: `parallel_safe: true` tasks that produced
-boundary violations or merge conflicts. Those are cases where the overlap
-analysis was wrong in the expensive direction, and they usually point at a
-specific shared file the decomposer should always mark unsafe.
+Flag tasks where `changed` substantially exceeds `claimed` as oversized, and
+oversized tasks are the upstream cause of most other waste.
+
+**Flow and serialization.** Check the `layer` and `parallel_safe` columns on
+`tasks` against what actually happened. Find `parallel_safe = 0` tasks whose
+changed files did not actually overlap any same-layer sibling — each is an
+unnecessary serialization that cost wall-clock time for nothing, and a pattern
+of them means the decomposer is being too conservative about a particular
+area:
+
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "
+  SELECT a.task_id
+    FROM tasks a
+   WHERE a.parallel_safe = 0
+     AND NOT EXISTS (
+       SELECT 1 FROM task_files fa
+       JOIN task_files fb ON fa.path = fb.path AND fb.task_id != a.task_id
+       JOIN tasks b ON b.task_id = fb.task_id AND b.layer = a.layer
+       WHERE fa.task_id = a.task_id AND fa.role='changed' AND fb.role='changed'
+     )
+"
+```
+
+The opposite pattern matters more: `parallel_safe = 1` tasks that produced
+boundary violations or merge conflicts. Query `boundary_violations` cross-
+referenced with `tasks.parallel_safe = 1`:
+
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "
+  SELECT bv.task_id, bv.path, bv.needed_for
+    FROM boundary_violations bv
+    JOIN tasks t ON t.task_id = bv.task_id
+   WHERE t.parallel_safe = 1
+"
+```
+
+Those are cases where the overlap analysis was wrong in the expensive
+direction, and they usually point at a specific shared file the decomposer
+should always mark unsafe.
 
 Also check layer depth. Many thin layers means the dependency graph was
 over-specified — dependencies recorded "to be safe" that forced serialization the
@@ -68,26 +119,57 @@ work did not actually require.
 **Boundary violations.** These are decomposer prediction failures. A few are
 normal on an unfamiliar codebase. A pattern — the same shared file claimed
 repeatedly — means the decomposer needs a rule for that area, and that rule is a
-one-line fix preventing a whole class of future rework.
+one-line fix preventing a whole class of future rework. Use
+`python3 "$RUN_DIR/kb_db.py" get task --id <id>` to inspect a specific task's
+claimed and changed files, or query directly:
 
-**Review economics.** How many findings were raised, and how many did the critic
-reject? Some rejection is healthy — a reviewer never wrong is not looking hard
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "SELECT path, COUNT(*) FROM boundary_violations GROUP BY path"
+```
+
+to spot a repeatedly-claimed shared file.
+
+**Review economics.** How many findings were raised, and how many did the
+critic reject?
+
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "SELECT author, ruling, COUNT(*) FROM findings GROUP BY author, ruling"
+```
+
+Some rejection is healthy — a reviewer never wrong is not looking hard
 enough. If most were rejected, the reviewer is generating noise that both the
 critic and the budget paid to process. Did the second hub round change any
 outcome? A round where both sides restated themselves did not earn its cost.
 
-Check for findings requesting work no AC required. If the critic applied one, the
-cycle paid to build something nobody asked for and will pay again to maintain it.
+Check for findings requesting work no AC required — fixes serving no AC:
 
-**Escape profile.** Read `escapes` in `qa-report.json`. Where defects are caught
-matters more than how many: a defect caught by a unit test costs one loop; the
-same defect at e2e costs review, reconciliation, and rework on top.
+```bash
+python3 "$RUN_DIR/kb_db.py" sql "
+  SELECT fx.id, fx.finding_id FROM fixes fx
+  LEFT JOIN fix_ac fa ON fa.fix_id = fx.id
+  WHERE fa.ac_id IS NULL
+"
+```
 
-**Scope built that should not have been.** Compare intake's `suspected_waste` and
-`smallest_valuable_slice` against what shipped. If waste was flagged and built
-anyway, note whether the user chose that deliberately — the skill is supposed to
-put it to them. Flagged and never surfaced is a skill defect, not a user
-decision.
+If the critic applied one, the cycle paid to build something nobody asked for
+and will pay again to maintain it.
+
+**Escape profile.** Query the escape records with
+`python3 "$RUN_DIR/kb_db.py" sql "SELECT * FROM escapes"` (columns:
+`failure`, `why_not_caught_earlier`, `missing_layer`, `prevention`), alongside
+`python3 "$RUN_DIR/kb_db.py" get qa` for the QA suite-run status. Where
+defects are caught matters more than how many: a defect caught by a unit test
+costs one loop; the same defect at e2e costs review, reconciliation, and
+rework on top.
+
+**Scope built that should not have been.** Compare intake's suspected waste
+and smallest valuable slice against what shipped:
+`python3 "$RUN_DIR/kb_db.py" get intake` (returns the `intake` singleton row,
+including `smallest_valuable_slice`) plus
+`python3 "$RUN_DIR/kb_db.py" sql "SELECT * FROM intake_suspected_waste"`. If
+waste was flagged and built anyway, note whether the user chose that
+deliberately — the skill is supposed to put it to them. Flagged and never
+surfaced is a skill defect, not a user decision.
 
 ## Output
 

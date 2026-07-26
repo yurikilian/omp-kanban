@@ -10,6 +10,7 @@ skill dispatches actually exists.
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -37,6 +38,19 @@ THINKING = {"minimal", "low", "medium", "high", "xhigh", "auto"}
 # Tool names omp actually exposes (verified from exported agents + session logs).
 TOOLS = {"read", "write", "edit", "grep", "glob", "bash", "lsp", "web_search",
          "ast_grep", "yield", "hub", "todo", "task", "advise", "web"}
+
+# Names the kb-* dispatch-reference regex must never flag as a missing agent,
+# even though they look like one — belt-and-braces alongside kb_db.py's
+# underscore (a backticked `kb-db` in a skill body would otherwise fail here).
+NOT_AGENTS = {"kb-db"}
+
+# Dead JSON artifact names the SQLite migration deleted the producers of.
+# qa-e2e-results.json is raw Playwright reporter output, not a migrated
+# artifact, and dashboard/state.json belongs to the unrelated vendored app.
+DEAD_ARTIFACTS = re.compile(
+    r"state\.json|intake\.json|todo\.json|backlog\.json|qa-report\.json|"
+    r"release\.json|findings\.json|critique\.json|verdict\.json|progress/")
+DEAD_ARTIFACT_EXEMPT = re.compile(r"qa-e2e-results\.json|dashboard/state\.json")
 
 errors, warnings = [], []
 
@@ -118,6 +132,21 @@ def check_agent(path):
             errors.append(
                 f"{path.name}: has an output schema AND asks for a prose return "
                 f"— these conflict, pick one")
+        # AGENTS.md:99 — structured returns are delivered via `yield`.
+        tools = fm.get("tools") or []
+        tool_names = (tools if isinstance(tools, list)
+                      else [t.strip() for t in str(tools).split(",")])
+        if "yield" not in tool_names:
+            errors.append(
+                f"{path.name}: has an output schema but no 'yield' tool "
+                f"(AGENTS.md:99 — structured returns are delivered via yield)")
+
+    dead = DEAD_ARTIFACTS.findall(DEAD_ARTIFACT_EXEMPT.sub("", body))
+    if dead:
+        errors.append(
+            f"{path.name}: references dead artifact name(s) {sorted(set(dead))} "
+            f"— these were deleted by the SQLite migration; use kb_db.py "
+            f"load/get instead")
 
     for i, block in enumerate(re.findall(r"```json\n(.*?)```", body, re.S)):
         try:
@@ -125,12 +154,70 @@ def check_agent(path):
         except json.JSONDecodeError as e:
             errors.append(f"{path.name}: JSON example {i} is invalid: {e}")
 
+    # Any bash block invoking `kb_db.py load` with a heredoc payload is a live
+    # contract example — pipe it through the real loader (--dry-run, rolled
+    # back) so a stale field name fails CI instead of the next live run.
+    for bash_block in re.findall(r"```bash\n(.*?)```", body, re.S):
+        if "kb_db.py load" not in bash_block:
+            continue
+        heredoc = re.search(r"<<['\"]?(\w+)['\"]?\n(.*?)\n\1", bash_block, re.S)
+        if not heredoc:
+            continue
+        payload = heredoc.group(2).strip()
+        if not payload.startswith("{"):
+            continue
+        try:
+            json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        ok, msg = validate_load_payload(payload)
+        if not ok:
+            errors.append(f"{path.name}: `load` example does not match "
+                           f"kb_db.py's real schema: {msg}")
+
     if len(fm.get("description", "")) < 40:
         warnings.append(
             f"{path.name}: short description — the parent reads this when "
             f"deciding whether to dispatch")
 
     return fm
+
+
+KB_DB = ROOT / "skills" / "kanban-cycle" / "kb_db.py"
+
+
+def validate_load_payload(payload_json):
+    """Pipe a `load` example through the real helper, rolled back, so a stale
+    section/field name in a prompt fails CI instead of the next live run."""
+    if not KB_DB.exists():
+        return True, "kb_db.py missing — reported separately by check_helper"
+    proc = subprocess.run(
+        [sys.executable, str(KB_DB), "load", "--dry-run", "--db", ":memory:"],
+        input=payload_json, capture_output=True, text=True, timeout=10)
+    if proc.returncode != 0:
+        return False, (proc.stderr or proc.stdout).strip()
+    return True, ""
+
+
+def check_helper():
+    """kb_db.py ships DDL + subcommands for every board agent — sanity-check
+    it the same way a stale prompt example is sanity-checked: actually run it."""
+    if not KB_DB.exists():
+        errors.append(f"{KB_DB.relative_to(ROOT)}: missing — required by every "
+                       f"board agent's load/get/set invocations")
+        return
+    try:
+        compile(KB_DB.read_text(), str(KB_DB), "exec")
+    except SyntaxError as e:
+        errors.append(f"{KB_DB.relative_to(ROOT)}: does not compile: {e}")
+        return
+    proc = subprocess.run(
+        [sys.executable, str(KB_DB), "init", "--run-dir", "/tmp/validate-selftest",
+         "--base-branch", "main", "--db", ":memory:"],
+        capture_output=True, text=True, timeout=10)
+    if proc.returncode != 0:
+        errors.append(f"{KB_DB.relative_to(ROOT)}: 'init --db :memory:' failed: "
+                       f"{(proc.stderr or proc.stdout).strip()}")
 
 
 def check_manifest():
@@ -253,7 +340,7 @@ def main():
             errors.append(f"{rel}: missing description (it gates the skill)")
         refs = set(re.findall(r"`(kb-[a-z]+)`", body))
         referenced |= refs
-        for missing in sorted(refs - on_disk):
+        for missing in sorted(refs - on_disk - NOT_AGENTS):
             errors.append(f"{rel} dispatches '{missing}' but no such agent file")
     for unused in sorted(on_disk - referenced):
         warnings.append(f"{unused} exists but no skill references it")
@@ -261,6 +348,7 @@ def main():
     check_manifest()
     hooks = check_hooks()
     check_dashboard()
+    check_helper()
 
     if not quiet:
         w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h in hooks]) + 2

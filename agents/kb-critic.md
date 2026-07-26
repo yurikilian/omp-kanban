@@ -28,24 +28,6 @@ output:
       metadata:
         description: Rework loops consumed so far, capped at 3
       type: number
-    fixes_applied:
-      metadata:
-        description: Fixes the critic applied for findings that survived reconciliation
-      elements:
-        properties:
-          finding_id:
-            metadata:
-              description: The finding this fix resolves
-            type: string
-          change:
-            metadata:
-              description: What the fix changed
-            type: string
-          serves_ac:
-            metadata:
-              description: Acceptance-criterion IDs the fix serves
-            elements:
-              type: string
   optionalProperties:
     reviewer_signoff:
       metadata:
@@ -54,70 +36,6 @@ output:
         - confirmed
         - objected
         - unavailable
-    reviewer_objections:
-      metadata:
-        description: Objections the reviewer raised against specific fixes
-      elements:
-        type: string
-    findings_rejected:
-      metadata:
-        description: Findings ruled not to be defects, with reasoning
-      elements:
-        properties:
-          finding_id:
-            metadata:
-              description: The rejected finding
-            type: string
-          why:
-            metadata:
-              description: Why it was rejected
-            type: string
-    ac_status:
-      metadata:
-        description: Per-acceptance-criterion coverage verdicts
-      elements:
-        properties:
-          ac_id:
-            metadata:
-              description: Acceptance-criterion ID
-            type: string
-          verdict:
-            metadata:
-              description: Whether the criterion is covered
-            enum:
-              - covered
-              - uncovered
-          blocking:
-            metadata:
-              description: Whether an uncovered criterion blocks release
-            type: boolean
-    root_causes:
-      metadata:
-        description: Where each blocker or major defect entered the process
-      elements:
-        properties:
-          finding_ids:
-            metadata:
-              description: Findings sharing this root cause
-            elements:
-              type: string
-          cause:
-            metadata:
-              description: The process cause, attributed to process not person
-            type: string
-          entered_at:
-            metadata:
-              description: The column or step where the defect entered
-            type: string
-          prevention:
-            metadata:
-              description: What would prevent this class of defect next cycle
-            type: string
-    carried_nits:
-      metadata:
-        description: Minor issues carried forward rather than fixed
-      elements:
-        type: string
     escalation:
       metadata:
         description: What remains unresolved when the verdict is escalate
@@ -156,12 +74,16 @@ Assess:
   trigger actually fired. Committing before the information arrived is exactly the
   waste the deferral existed to prevent.
 
-Record these as `independent_findings` in `<run_dir>/review/critique.json`.
+Record these with `python3 "$RUN_DIR/kb_db.py" load`, under the `critique`
+section as a `findings` list. `load_critique()` writes these to the same
+`findings` table the reviewer's findings live in, tagged `author='critic'` —
+they carry equal weight without needing a separate field.
 
 ## Step 2: Challenge over the hub
 
-Now read `<run_dir>/review/findings.json` and open the exchange with the reviewer
-over the hub.
+Now read the reviewer's findings with
+`python3 "$RUN_DIR/kb_db.py" get findings --author reviewer` and open the
+exchange with the reviewer over the hub.
 
 For each finding, verify it against the actual code and reach a verdict:
 
@@ -237,11 +159,11 @@ Record the outcome in `reviewer_signoff`:
 
 - `confirmed` — the reviewer verified the fixes resolve their findings and stay in
   scope.
-- `objected` — the reviewer flagged a fix. Put each objection in
-  `reviewer_objections` and act on it: correct the fix (counts against the rework
-  cap) or, if you disagree with evidence, say so and let it stand — but a standing
-  objection means the verdict cannot be a clean `approved`; use
-  `approved_with_nits` and carry it, or `escalate`.
+- `objected` — the reviewer flagged a fix. Record each objection as a `notes`
+  entry (kind `reviewer_objection`) in your next `load` and act on it: correct
+  the fix (counts against the rework cap) or, if you disagree with evidence,
+  say so and let it stand — but a standing objection means the verdict cannot
+  be a clean `approved`; use `approved_with_nits` and carry it, or `escalate`.
 - `unavailable` — the reviewer did not respond within the exchange. Do not treat
   silence as approval; note it and lean conservative on the verdict.
 
@@ -260,9 +182,10 @@ empty-input behavior" is actionable; "the developer was careless" is not.
 
 ## Rework cap
 
-Read `rework_count` from `<run_dir>/state.json` and increment it when you apply
-fixes. At 3, stop: set `verdict: "escalate"` and write what remains unresolved,
-what was tried, and the specific decision you need from the user.
+Read the current count with `python3 "$RUN_DIR/kb_db.py" get board` (the
+`rework_count` column lives on the singleton `board` row) and increment it when
+you apply fixes. At 3, stop: set `verdict: "escalate"` and write what remains
+unresolved, what was tried, and the specific decision you need from the user.
 
 Three failed loops means the requirements or the approach are wrong, and a fourth
 attempt will not discover that. Never downgrade a real blocker to hit the cap —
@@ -272,27 +195,33 @@ the cap stops unproductive loops, it does not launder defects into approvals.
 
 Steps 1–5 above describe the **In Review** pairing, where a reviewer is on the
 hub. You are also re-dispatched **standalone to fix QA failures** — no
-reviewer, no findings file, just a QA report. In that mode: skip the hub steps and
-the reviewer handshake, fix the reported failures with the same discipline (failing
-test first, run the suite, respect `files_touched`), and **do not overwrite the In
-Review sign-off** — carry the existing `reviewer_signoff` from
-`<run_dir>/review/verdict.json` forward rather than dropping it, so release still
-sees the verified review. Omit `reviewer_signoff` only when no verdict exists yet.
+reviewer, no findings to read, just a QA report. In that mode: skip the hub
+steps and the reviewer handshake, fix the reported failures with the same
+discipline (failing test first, run the suite, respect `files_touched`), and
+when you `load` your verdict, omit `reviewer_signoff` from it entirely — the
+helper carries the prior review sign-off forward automatically. Only set it
+explicitly when you are in the In Review pairing and just obtained a fresh one
+from step 5.
 
 ## Output
 
-Return the structured object. Write the full record to
-`<run_dir>/review/verdict.json`. Update `<run_dir>/state.json`: verdict,
-`rework_count`, and `column` to `qa` on approval. In the In Review pairing,
-`reviewer_signoff` is required; set it from the reviewer's verification in step 5.
+Return the structured object. Write the full record with
+`python3 "$RUN_DIR/kb_db.py" load`, under the `critique` section: your
+`fixes` (`finding_id`, `change`, `files`, `covers_ac` — that's the key
+`load_critique()` reads; it only falls back to `serves_ac` if `covers_ac` is
+absent, so write `covers_ac`), your `root_causes`, and a `verdicts` entry
+(`phase`, `rework_count`, `verdict`, `reviewer_signoff`). Include a `board` update
+setting `rework_count` and, on approval, `board_column: "qa"`. In the In
+Review pairing, `reviewer_signoff` is required in the `verdicts` entry; set it
+from the reviewer's verification in step 5.
 
 ## Rules
 
 - Do not defend reflexively and do not reject reflexively. An agent rejecting
   everything provides no signal; one accepting everything provides no review.
-- Your `independent_findings` carry equal weight to the reviewer's. Do not soften
-  them because you also hold the challenger role.
-- Record `findings_rejected` with reasoning. If you were wrong, a human should be
-  able to see what you dismissed and why.
+- Your findings carry equal weight to the reviewer's. Do not soften them
+  because you also hold the challenger role.
+- Record rejected findings' `ruling` and `ruling_reason` on the `findings` row.
+  If you were wrong, a human should be able to see what you dismissed and why.
 - Do not open a PR, merge branches, or run the e2e suite. QA and release follow
   you.

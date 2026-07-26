@@ -21,117 +21,19 @@ output:
       enum:
         - pass
         - fail
-    framework:
-      metadata:
-        description: The e2e framework detected or scaffolded
-      type: string
-    results:
-      metadata:
-        description: Outcome of each verification suite that was run
-      elements:
-        properties:
-          suite:
-            metadata:
-              description: Which suite ran
-            enum:
-              - unit
-              - component
-              - integration
-              - e2e
-              - lint
-              - typecheck
-              - build
-          status:
-            metadata:
-              description: Suite outcome
-            enum:
-              - pass
-              - fail
-              - skipped
-          summary:
-            metadata:
-              description: Short count summary, e.g. "42 passed, 0 failed"
-            type: string
-  optionalProperties:
-    scaffolded:
-      metadata:
-        description: Whether Playwright was scaffolded because no e2e framework existed
-      type: boolean
     e2e_skipped:
       metadata:
         description: Whether e2e was skipped because no runnable server was detected
       type: boolean
+  optionalProperties:
     skip_reason:
       metadata:
         description: Why e2e was skipped; present only when e2e_skipped is true
       type: string
-    ac_verification:
+    scaffolded:
       metadata:
-        description: Per-acceptance-criterion e2e verification results
-      elements:
-        properties:
-          ac_id:
-            metadata:
-              description: Acceptance-criterion ID
-            type: string
-          e2e_test:
-            metadata:
-              description: The e2e test that covers it
-            type: string
-          status:
-            metadata:
-              description: Verification outcome
-            enum:
-              - pass
-              - fail
-              - not-covered
-    failures:
-      metadata:
-        description: Individual test failures across all suites
-      elements:
-        properties:
-          suite:
-            metadata:
-              description: Suite the failure occurred in
-            type: string
-          test:
-            metadata:
-              description: Failing test name
-            type: string
-          error:
-            metadata:
-              description: Failure message
-            type: string
-          suspected_task:
-            metadata:
-              description: Task most likely responsible
-            type: string
-    escapes:
-      metadata:
-        description: Defects that reached QA, and the earlier layer that should have caught them
-      elements:
-        properties:
-          failure:
-            metadata:
-              description: The defect that escaped
-            type: string
-          why_not_caught_earlier:
-            metadata:
-              description: Why an earlier layer missed it
-            type: string
-          missing_layer:
-            metadata:
-              description: The verification layer that had the gap
-            type: string
-          prevention:
-            metadata:
-              description: What would catch this class earlier next time
-            type: string
-    flaky:
-      metadata:
-        description: Tests that passed only on retry
-      elements:
-        type: string
+        description: Whether Playwright was scaffolded because no e2e framework existed
+      type: boolean
 ---
 
 You are the QA agent — the last gate before a pull request. Everything before you
@@ -164,9 +66,19 @@ chosen tooling is not your call, and a broken config is information they need.
 3. Write `playwright.config.ts`: `testDir: 'e2e'`, `baseURL` from
    `process.env.BASE_URL` defaulting to the repo's dev port, `webServer` pointing
    at the repo's **existing** dev/start script (detect it — do not invent one),
-   `reporter: [['list'], ['json', { outputFile: '<run_dir>/qa-e2e-results.json' }]]`,
+   `reporter: [['list'], ['json', { outputFile: path.join('<run_dir-resolved-to-an-absolute-path>', 'qa-e2e-results.json') }]]`,
    `retries: process.env.CI ? 1 : 0`, `trace: 'on-first-retry'`,
    `screenshot: 'only-on-failure'`, Chromium only unless the spec asked otherwise
+
+   `outputFile` must be built from `run_dir` resolved to an **absolute** path, not
+   the bare value written into the config as a relative literal. Playwright
+   resolves `outputFile` against its own process's working directory, which may be
+   a worktree rather than `run_dir` itself — the same worktree-path hazard
+   `kb_db.py` invocations already have to route around by naming the run's
+   absolute path explicitly rather than trusting whatever directory the shell
+   happens to be sitting in. Resolve it once yourself (e.g. `realpath "$RUN_DIR"`)
+   and inline that absolute string into the config; do not leave it relative and
+   do not invent an environment variable no other agent in this cycle sets.
 4. Create `e2e/`, add a `test:e2e` script, append `test-results/`,
    `playwright-report/`, `.playwright/` to `.gitignore`
 5. Commit separately: `chore(qa): scaffold playwright e2e harness`
@@ -192,8 +104,31 @@ error.
 
 ## Output
 
-Return the structured object and write it to `<run_dir>/qa-report.json`. Update
-`<run_dir>/state.json`: `column` to `done` on pass, `in_review` on fail.
+Pipe your results into the `qa` section via
+`python3 "$RUN_DIR/kb_db.py" load`:
+
+- `suite_runs`: one row per suite you ran — `suite`
+  (unit/component/integration/e2e/lint/typecheck/build), `status`
+  (pass/fail/skipped), `summary` (short count, e.g. "42 passed, 0 failed").
+- `ac_verification`: one row per acceptance criterion — `ac_id`, `verdict`
+  (pass/fail/not-covered), `covered_by` (the e2e test that covers it).
+- `failures`: one row per individual test failure — `suite`, `test`, `error`,
+  `suspected_task`.
+- `escapes`: one row per defect that reached QA — `failure`,
+  `why_not_caught_earlier`, `missing_layer`, `prevention`.
+- `tests`: any new e2e specs you wrote — `name`, `test_type` (`e2e`), `file`.
+- `flaky`: any tests that passed only on retry, as a plain list of test names.
+- `board`: `{"board_column": "done"}` on pass, `{"board_column": "in_review"}`
+  on fail.
+
+Read `load_qa()` in `kb_db.py` for the exact shape each of these rows must take
+— match its field names exactly or the load is rejected. It accepts either
+`suite_runs` or `results` for the suite rows and either `ac_verification` or
+`ac_coverage` for the per-AC rows; use the names above.
+
+Yield the trimmed structured object — `verdict`, `e2e_skipped`, and whichever
+of `skip_reason` / `scaffolded` apply. Everything else lives in the DB, queried
+back with `python3 "$RUN_DIR/kb_db.py" get qa` rather than re-returned here.
 
 ## Rules
 

@@ -92,7 +92,9 @@ For a first run, try it on something small and let it stop at the intake
 checkpoint. It asks before planning, and the intake pass is cheap.
 
 Each run gets its own directory under `.kanban/runs/<timestamp>-<slug>/`, so
-concurrent invocations never collide. Add `.kanban/` to your `.gitignore`.
+concurrent invocations never collide. All board state for a run lives in one
+SQLite file there, `kanban.db`, queried through the bundled `kb_db.py` helper —
+never hand-edited. Add `.kanban/` to your `.gitignore`.
 
 ## Dashboard (optional)
 
@@ -144,7 +146,8 @@ independent check closes that gap without a third agent, restoring the separatio
 an evaluator-optimizer loop needs. `kb-critic` still carries its own guards — fix
 only what survived reconciliation, write the failing test first, escalate rather
 than let a fix grow — and the skill gates on `reviewer_signoff` and flags
-`fixes_applied` reaching well past the findings that motivated it.
+fixes (queried with `get fixes`) reaching well past the findings that motivated
+them.
 
 The sign-off is one round, not a full second review. If you would rather have a
 fully independent arbiter, split `kb-critic` into a ruling agent and a fixing
@@ -171,9 +174,9 @@ in a doc nobody reads:
   about whether the system works, which is what `kb-qa` exists to check.
 
 Concurrency is omp's job, not the skill's. `parallel_safe` in `kb-decompose` is
-not a WIP limit — it is file-ownership analysis, marking tasks whose
-`files_touched` overlap or that modify shared surface like routers, migrations,
-and lockfiles. Worktree isolation does not prevent those from colliding at merge.
+not a WIP limit — it is file-ownership analysis, marking tasks whose claimed
+files overlap or that modify shared surface like routers, migrations, and
+lockfiles. Worktree isolation does not prevent those from colliding at merge.
 
 ## Packaging
 

@@ -64,8 +64,9 @@ in code, races, unbounded resource use.
 
 ## The exchange
 
-Write `<run_dir>/review/findings.json` first, then `hub send` to the critic that
-your findings are ready, and `hub wait` for their challenges.
+Pipe your findings and AC coverage audit to `python3 "$RUN_DIR/kb_db.py" load` under
+the `review` section (see Output below for the shape), then `hub send` to the critic
+that your findings are ready, and `hub wait` for their challenges.
 
 The critic will challenge specific findings. For each challenge:
 
@@ -99,7 +100,7 @@ not. This is one short round, not a reopening of settled findings.
 
 ## Output
 
-Write `<run_dir>/review/findings.json`:
+This is the shape you `load` under the `review` section:
 
 ```json
 {
@@ -116,14 +117,15 @@ Write `<run_dir>/review/findings.json`:
       "conceded": false
     }
   ],
-  "ac_coverage_audit": [
+  "ac_coverage": [
     { "ac_id": "E1-S1-AC1", "covered_by": ["test name"], "verdict": "covered | superficial | uncovered" }
   ]
 }
 ```
 
-Update `conceded` as the exchange proceeds, so the critic's final read reflects
-what survived.
+Re-`load` the `review` section again with updated `conceded` values as the exchange
+proceeds — the loader upserts by `finding_id`, so re-loading is safe and idempotent
+and will not duplicate rows — so the critic's final read reflects what survived.
 
 Return a short prose summary: finding counts by severity, and any AC you found
 uncovered.

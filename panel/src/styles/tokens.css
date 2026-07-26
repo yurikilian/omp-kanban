@@ -1,0 +1,43 @@
+/*
+ * OMP Prism design tokens - DESIGN-SYSTEM.md section 3.1 ("Backgrounds and
+ * Surfaces"). Values are raw "H S% L%" triplets, consumed as hsl(var(--x))
+ * at the point of use (see globals.css's @theme inline block), and copied
+ * here verbatim so a computed-style assertion against document.documentElement
+ * can compare them character-for-character against the spec.
+ *
+ * Avoid pure black: the .dark background is a slightly elevated dark
+ * surface, not oklch/hsl(*, *, 0%).
+ */
+:root {
+  --background: 220 20% 98%;
+  --foreground: 222 30% 10%;
+
+  --surface-1: 0 0% 100%;
+  --surface-2: 220 18% 96%;
+  --surface-3: 220 15% 93%;
+
+  --border: 220 14% 88%;
+  --muted: 220 15% 95%;
+  --muted-foreground: 220 9% 43%;
+
+  --primary: 217 91% 56%;
+  --primary-foreground: 0 0% 100%;
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: 225 16% 7%;
+  --foreground: 220 18% 92%;
+
+  --surface-1: 224 15% 9%;
+  --surface-2: 224 14% 12%;
+  --surface-3: 224 13% 15%;
+
+  --border: 220 11% 19%;
+  --muted: 224 13% 13%;
+  --muted-foreground: 218 10% 61%;
+
+  --primary: 213 94% 68%;
+  --primary-foreground: 224 20% 8%;
+}

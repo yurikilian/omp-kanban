@@ -1,0 +1,65 @@
+/* OMP Prism agent colour tokens: DESIGN-SYSTEM.md section 4. */
+:root {
+  --agent-blue: 199 89% 55%;
+  --agent-violet: 263 83% 68%;
+  --agent-green: 151 65% 52%;
+  --agent-amber: 39 92% 58%;
+  --agent-pink: 330 81% 65%;
+  --agent-teal: 174 67% 47%;
+  --agent-orange: 24 94% 60%;
+  --agent-gray: 218 11% 60%;
+}
+
+.agent-badge {
+  align-items: center;
+  background-color: hsl(var(--surface-2));
+  border: 1px solid hsl(var(--border));
+  border-radius: 9999px;
+  color: hsl(var(--foreground));
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 500;
+  gap: 0.375rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+}
+
+.agent-badge__accent {
+  background-color: hsl(var(--agent-accent));
+  border-radius: 9999px;
+  flex: none;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.agent-badge[data-agent-family="coordinator"] {
+  --agent-accent: var(--agent-blue);
+}
+
+.agent-badge[data-agent-family="planner"] {
+  --agent-accent: var(--agent-violet);
+}
+
+.agent-badge[data-agent-family="developer"] {
+  --agent-accent: var(--agent-green);
+}
+
+.agent-badge[data-agent-family="reviewer"] {
+  --agent-accent: var(--agent-amber);
+}
+
+.agent-badge[data-agent-family="qa"] {
+  --agent-accent: var(--agent-pink);
+}
+
+.agent-badge[data-agent-family="research"] {
+  --agent-accent: var(--agent-teal);
+}
+
+.agent-badge[data-agent-family="fixer"] {
+  --agent-accent: var(--agent-orange);
+}
+
+.agent-badge[data-agent-family="unknown"] {
+  --agent-accent: var(--agent-gray);
+}

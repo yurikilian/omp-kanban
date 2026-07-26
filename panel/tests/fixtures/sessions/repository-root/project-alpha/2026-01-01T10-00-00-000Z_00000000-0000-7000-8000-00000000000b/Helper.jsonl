@@ -1,0 +1,4 @@
+{"type":"title","title":"Helper","updatedAt":"2026-01-01T10:02:45.000Z"}
+{"type":"session","version":3,"id":"helper-sub","timestamp":"2026-01-01T10:02:45.000Z","cwd":"/work/alpha"}
+{"type":"message","id":"h1","parentId":null,"timestamp":"2026-01-01T10:03:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Helping."}],"model":"claude-sonnet-5","usage":{"input":300,"output":50,"cost":{"total":0.003}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"h-t1","toolName":"bash","startedAt":"2026-01-01T10:04:30.000Z","intent":"Check helper status"},"id":"hc1","parentId":"h1","timestamp":"2026-01-01T10:04:30.000Z"}

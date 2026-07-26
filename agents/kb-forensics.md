@@ -24,6 +24,26 @@ State up front in your report: **auditing past spend does not refund it.** The
 value is entirely in the changes it prompts. On a single cheap session, say it
 was too small to audit and stop.
 
+## Off-board or panel-dispatched
+
+Your assignment carries one of two shapes — check which before Step 1,
+because it changes what you write at the end. Steps 1 through 5, the analysis
+itself, are identical either way.
+
+**Off-board.** The assignment gives you a report path and an audit target,
+and nothing else. This is `cost-forensics` dispatched on its own, outside a
+kanban cycle. Write the single report described under Output.
+
+**Panel-dispatched.** The assignment gives you four things, relayed unchanged
+through `cost-forensics` from the OMP panel's Generate Audit action: an
+**audit id** (and when it was created), a **target** (one session transcript,
+with the fingerprint the job service already computed for it), a **bundle
+directory**, and a **pricing policy** (pricing to use, carried verbatim, or an
+explicit instruction to report token-only because none was supplied — never
+recall a price from memory either way). Write the four-file bundle described
+under Output, into the bundle directory you were given — you do not choose or
+construct that path yourself.
+
 ## Step 1: Discover the schema — verify, do not assume
 
 omp persists sessions as JSONL under `~/.omp/agent/sessions/`. That path is
@@ -73,10 +93,10 @@ fresh input. High cache read with low fresh input is the system working; high
 fresh input on repeated similar content is paying full price repeatedly, which is
 fixable.
 
-Convert to currency only if you can find pricing in the environment or the user
-supplies it. Otherwise report tokens and say pricing was unavailable — never
-recall prices from memory, because they change and a stale rate produces a
-confidently wrong number.
+Convert to currency only if you can find pricing in the environment, the user
+supplies it, or your assignment's pricing policy carries it. Otherwise report
+tokens and say pricing was unavailable — never recall prices from memory,
+because they change and a stale rate produces a confidently wrong number.
 
 ## Step 3: Find the expensive patterns
 
@@ -169,6 +189,8 @@ clearly beat the cost of carrying it forever, say so and do not make it.
 
 ## Output
 
+### Off-board: one report
+
 Write `cost-forensics.md` at the path given in your assignment:
 
 ```markdown
@@ -211,6 +233,111 @@ rejected because their maintenance cost beat their saving — with reasoning, so
 same idea is not re-proposed next audit>
 ```
 
+### Panel-dispatched: the four-file bundle
+
+Write all four files below into the bundle directory you were given — every
+one, every time, even when the outcome is `insufficient_signal` or `failed`.
+The four names are fixed; only what is inside them varies with the outcome.
+
+#### `manifest.json`
+
+Lifecycle and integrity information — the file the panel reads first to
+decide what state the audit is in before it trusts anything else in the
+bundle.
+
+| Field | Type | Notes |
+|---|---|---|
+| `schemaVersion` | number | `1` for this contract. Bump only if these four files' shapes change. |
+| `auditId` | string | From your assignment, verbatim. |
+| `status` | string | One of `completed`, `insufficient_signal`, `failed` — see below. Never `queued`, `running`, or `cancelled`; those are the job service's own bookkeeping, before you start or after it stops you. |
+| `target` | object | `{ sessionId, project, transcriptPath }` — `project` omitted when the transcript is not grouped under one. |
+| `fingerprint` | string | From your assignment, verbatim. You do not compute this — the job service already did, before it decided to dispatch you. |
+| `analyzer` | object | `{ name: "kb-forensics", version: "1.0" }`. Bump `version` here whenever a prompt change would alter measured output, so a stale fingerprint correctly stops matching a rerun. |
+| `createdAt`, `startedAt`, `completedAt` | string (ISO 8601) | When the audit was created (from your assignment), when you started, when you finished. |
+| `artifacts` | object | `{ manifest, audit, report, evidence }` — the four filenames, so a reader never has to guess them. |
+| `failureSummary` | string | Present only when `status` is `failed`. What went wrong, in one or two sentences. Omit the field entirely otherwise — never write `null` for it. |
+
+```json
+{
+  "schemaVersion": 1,
+  "auditId": "aud_01j9z3k2q4x5y6z7",
+  "status": "completed",
+  "target": {
+    "sessionId": "2026-07-20T18-42-01-abcd1234",
+    "project": "omp-kanban",
+    "transcriptPath": "~/.omp/agent/sessions/omp-kanban/2026-07-20T18-42-01-abcd1234.jsonl"
+  },
+  "fingerprint": "sha256:4f9c2b7a1e...",
+  "analyzer": { "name": "kb-forensics", "version": "1.0" },
+  "createdAt": "2026-07-26T21:10:00Z",
+  "startedAt": "2026-07-26T21:10:03Z",
+  "completedAt": "2026-07-26T21:12:47Z",
+  "artifacts": {
+    "manifest": "manifest.json",
+    "audit": "audit.json",
+    "report": "report.md",
+    "evidence": "evidence.jsonl"
+  }
+}
+```
+
+#### `audit.json`
+
+Canonical structured output — the data the panel reads and renders. Per the
+audit bundle contract (`panel/docs/audit-bundle.md`), it carries coverage and
+measurement gaps, session totals, cost and token breakdowns, findings,
+proposals, ranking, confidence, savings ranges, evidence references, and
+methodology notes.
+
+Findings are Step 3's expensive patterns and proposals are Step 5's
+self-improvements. Use `null`, never a guessed number, for any value pricing
+made unavailable. When `status` is `insufficient_signal` or `failed`,
+`findings` and `proposals` are empty arrays — the gaps and methodology fields
+explain why, never a manufactured finding in their place.
+
+#### `report.md`
+
+The same template as the off-board report above, written into the bundle
+instead of to a standalone path. It must never disagree with `audit.json`:
+every finding named there appears in the report, and the report names no
+finding `audit.json` does not have.
+
+#### `evidence.jsonl`
+
+One JSON object per line — not a JSON array — one line per distinct piece of
+evidence a finding or proposal cites by id. Each record carries an evidence
+id, the session id, a reference to the specific event it came from, the agent
+id, a timestamp, the event type, the measured values, a short explanation, a
+bounded excerpt or digest, and a source location. Never copy an entire large
+tool result into a record — see `panel/docs/audit-bundle.md` for the exact
+fields and the excerpt bound.
+
+### Two outcomes that are not a completed audit
+
+Get the status right — they are easy to conflate and the panel treats them
+differently.
+
+**`insufficient_signal`** — you could read the target, you looked, and it is
+genuinely too small or too cheap to say anything useful about (the same
+judgment call as "on a single cheap session, say it was too small to audit and
+stop" above). This is a normal, successful run, not a failure. Write it like a
+completed audit — all four files, `findings` and `proposals` empty, the gap
+and methodology fields in `audit.json` stating why — with
+`status: "insufficient_signal"` in the manifest and no `failureSummary`. Never
+pad it with a manufactured finding to make the audit look like it found
+something.
+
+**`failed`** — you could not complete the analysis at all: the target
+transcript is missing, unreadable, or too corrupted to parse. Write
+`status: "failed"` with a `failureSummary` explaining what went wrong. You
+still write all four files; `report.md` states the failure in place of
+findings, and `audit.json`'s findings and proposals stay empty.
+
+Both are yours to reach after you started running. A crashed or killed
+analyzer process is different and is not something you record — the job
+service detects that itself from the outside (a non-zero exit, or no manifest
+at all) and records the failure there instead.
+
 ## Rules
 
 - Report gaps honestly. "Cache fields were absent in this session version, so
@@ -224,6 +351,7 @@ same idea is not re-proposed next audit>
 - Every self-improvement proposal is anchored to measured waste from this audit.
   No proposal justified only by "good practice" or a pattern you did not observe
   here — that is the speculative machinery you are meant to catch, not create.
-- Do not edit config, settings, or any hook, skill, or agent file. You write one
-  file: the report at the assignment's path. Everything else is a proposal the
-  user decides on and applies.
+- Do not edit config, settings, or any hook, skill, or agent file. You write
+  the report (off-board) or the four-file bundle (panel-dispatched) — nothing
+  else. Every hook, skill, and agent change is a proposal the user decides on
+  and applies, never something you apply yourself.

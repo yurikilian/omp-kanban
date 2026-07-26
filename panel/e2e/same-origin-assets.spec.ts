@@ -1,6 +1,10 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
 
-const FONT_PATH = /^\/fonts\/[^/]+\.woff2$/;
+const BUNDLED_FONT_PATH = /^\/_next\/static\/media\/[^/]+\.woff2$/;
+const VENDORED_FONT_PATHS = [
+  "/fonts/geist-sans-variable.woff2",
+  "/fonts/geist-mono-variable.woff2",
+] as const;
 
 function isFontResponse(response: Response): boolean {
   const request = response.request();
@@ -60,12 +64,18 @@ test("[E2-S1-AC4] every requested local font file is served from the panel origi
   await page.goto("/", { waitUntil: "networkidle" });
 
   const origin = new URL(page.url()).origin;
+  for (const path of VENDORED_FONT_PATHS) {
+    const vendoredFont = await page.request.get(new URL(path, origin).href);
+    expect(new URL(vendoredFont.url()).origin).toBe(origin);
+    expect(vendoredFont.status()).toBe(200);
+  }
+
   expect(fontResponses).not.toHaveLength(0);
 
   for (const response of fontResponses) {
     const url = new URL(response.url());
     expect(url.origin).toBe(origin);
-    expect(url.pathname).toMatch(FONT_PATH);
+    expect(url.pathname).toMatch(BUNDLED_FONT_PATH);
     expect(response.status()).toBe(200);
   }
 });
@@ -94,9 +104,6 @@ test("[E1-S4-AC3] every served script, stylesheet, font, and icon reference is s
     for (const rawUrl of urls) {
       const url = new URL(rawUrl);
       expect(url.origin).toBe(origin);
-      if (kind === "fonts") {
-        expect(url.pathname).toMatch(FONT_PATH);
-      }
     }
   }
 });

@@ -19,6 +19,7 @@ with your own framing.
 *   **Maximum Polls:** You are strictly limited to a maximum of 3 `wait` polls per active subagent task.
 *   **Timeout Cancellation:** If a subagent does not return a state update (e.g., "IN_PROGRESS" or "COMPLETED") after the 3rd poll, you must immediately cancel the stalled subagent task.
 *   **Circuit Breaker:** If a task fails, you may spawn exactly one retry. If the retry also fails or times out, you must immediately halt the kanban cycle and request manual intervention. Do not endlessly spawn retries.
+*   **Retries are safe.** A retried subagent is safe to re-dispatch: every `kb_db.py load` is idempotent on its natural key, so replaying a write does not duplicate or corrupt state.
 
 ## Operating principles
 
@@ -63,49 +64,83 @@ Confirm a git repository with a clean working tree. If dirty, stop and ask — t
 cycle creates and merges branches, and starting from uncommitted changes
 entangles the user's work with the agents'.
 
-**Create an isolated run directory.** Multiple invocations may run concurrently
-against the same repository, so nothing is shared between them:
+**Create an isolated run directory — with an absolute path.** Multiple
+invocations may run concurrently against the same repository, so nothing is
+shared between them. `RUN_DIR` **must be absolute**: `kb-dev` fans out into
+isolated git worktrees, and a relative path resolves to a different, empty
+`kanban.db` in each one — every dev write would be silently lost with no error.
 
 ```bash
-RUN_DIR=".kanban/runs/$(date +%Y%m%d-%H%M%S)-<slug>"
-mkdir -p "$RUN_DIR"/{progress,review}
+RUN_DIR="$(pwd)/.kanban/runs/$(date +%Y%m%d-%H%M%S)-<slug>"
+mkdir -p "$RUN_DIR"
+for c in "$HOME/.omp/agent/skills/kanban-cycle/kb_db.py" ".omp/skills/kanban-cycle/kb_db.py"; do
+  [ -f "$c" ] && cp "$c" "$RUN_DIR/kb_db.py" && break
+done
+python3 "$RUN_DIR/kb_db.py" init --run-dir "$RUN_DIR" --base-branch "$(git branch --show-current)"
 ```
 
-Every agent receives `run_dir` in its assignment and writes only beneath it. Add
+Every agent receives `run_dir` in its assignment and writes only beneath it —
+and nothing else, since the database is the one thing keyed to that path. Add
 `.kanban/` to `.gitignore` if not already present.
 
-Initialize `<run_dir>/state.json`:
+`init` seeds the `board` row (`board_column: "intake"`, `track: NULL`,
+`rework_count: 0`, `qa_retries: 0`) and is idempotent — safe to re-run on
+resume; it never resets progress already recorded. `track` is set at intake
+(step 1) to `"full"` or `"reduced"` via `set board track=...` and read by
+later columns via `get board` to decide which agents run.
 
-```json
-{
-  "run_dir": ".kanban/runs/20260723-104500-auth",
-  "column": "intake",
-  "track": null,
-  "started_at": "<iso8601>",
-  "base_branch": "<current branch>",
-  "tasks": {},
-  "rework_count": 0
-}
+## The run database
+
+Every agent writes through the helper copied into `run_dir` above — never by
+hand-editing `kanban.db` or writing JSON files:
+
+```bash
+python3 "$RUN_DIR/kb_db.py" load <<'JSON'
+{"tasks": [...]}
+JSON
+python3 "$RUN_DIR/kb_db.py" set board board_column=todo
+python3 "$RUN_DIR/kb_db.py" get task --id T1
 ```
 
-`track` is set at intake (step 1) to `"full"` or `"reduced"` and read by later
-columns to decide which agents run.
+Five verbs, all documented in the agent prompts that use them: `init` (above);
+`load` — nested JSON on stdin or `--file`, applied in one transaction, keyed by
+section (`board`, `intake`, `backlog`, `tasks`, `progress`, `review`,
+`critique`, `qa`, `release`, `notes`); `set <entity> [<id>] k=v…` for scalar
+mutations (`board`, `task`, `finding`, `story`, `defect`); `get <view>
+[flags]` for named reads (`board`, `intake`, `backlog`, `acs`, `plan-check`,
+`layer --n N`, `task --id T1`, `findings [--author reviewer|critic] [--open]`,
+`fixes`, `verdict`, `qa`, `traceability --format md`, `flow-metrics`,
+`process-notes`, `tables`); and `sql "<SELECT…>"` as a read-only escape hatch.
+No `--db` flag ever appears in an agent assignment — the helper defaults to
+the copy sitting beside it in `run_dir`.
+
+Agents receive only `run_dir` and their own task ID or scope; they discover
+everything else — the backlog, their task's claimed files, prior findings —
+through these commands rather than being handed it in their prompt. This also
+enforces boundaries structurally: `get task --id T1` returns only that task,
+so "do not read sibling tasks" is a property of the query, not just an
+instruction.
 
 ## The cycle
 
 ### 1. Intake
 
-Dispatch `kb-intake` with the raw input and `run_dir`.
+Dispatch `kb-intake` with the raw input and `run_dir`. It returns `kind`,
+`risk_level`, `open_questions_count`, `suspected_waste_count`, and
+`scope_reduction_suggested` — the detail behind each lives in the database.
 
-If `open_questions` contains anything that would materially change the design,
-put it to the user before continuing. Answering it yourself defeats the point —
-these are the ambiguities where guessing wrong wastes everything downstream.
+If `open_questions_count` is non-zero, run `python3 "$RUN_DIR/kb_db.py" get
+intake` (open questions are `notes` rows with `kind: "open_question"`) and put
+anything that would materially change the design to the user before
+continuing. Answering it yourself defeats the point — these are the
+ambiguities where guessing wrong wastes everything downstream.
 
-If `suspected_waste` is non-empty, or `smallest_valuable_slice` is meaningfully
-smaller than the request, put both to the user now. Cutting scope here costs one
-message; cutting it after the code exists costs everything spent building it.
-Present it as a choice, not a recommendation — they may have context for why the
-larger scope is right.
+If `suspected_waste_count` is non-zero or `scope_reduction_suggested` is true,
+pull the detail the same way (`get intake` plus `sql "SELECT * FROM
+intake_suspected_waste"`) and put both to the user now. Cutting scope here
+costs one message; cutting it after the code exists costs everything spent
+building it. Present it as a choice, not a recommendation — they may have
+context for why the larger scope is right.
 
 **Choose the track — default to the smallest cycle the work justifies.** The full
 eight-agent board is not the default for everything; running it on a small change
@@ -123,69 +158,81 @@ costs more than the change is worth. Decide from intake's `kind` and `risk.level
 
 State the track you chose and why in one line, and let the user upgrade to the
 full board if they want the extra rigor. Escalating to more agents is the explicit
-choice; defaulting to fewer is the safe one. Write the choice to `state.json` as
-`track: "full"` or `track: "reduced"` — later columns read it to decide whether QA
-runs and what release expects.
+choice; defaulting to fewer is the safe one. Write the choice:
+`python3 "$RUN_DIR/kb_db.py" set board track=full` (or `track=reduced`) —
+later columns read it via `get board` to decide whether QA runs and what
+release expects.
 
 ### 2. Backlog (spec only)
 
-Dispatch `kb-planner`.
+Dispatch `kb-planner`, looping while its `more_epics_pending` return is true.
 
-Show the user the epic and story structure before proceeding. This is the
-cheapest correction point in the cycle — a wrong story here becomes wrong tasks,
-wrong tests, and a wrong PR.
+Show the user the epic and story structure before proceeding —
+`python3 "$RUN_DIR/kb_db.py" get backlog`. This is the cheapest correction
+point in the cycle — a wrong story here becomes wrong tasks, wrong tests, and a
+wrong PR.
 
 ### 3. Todo
 
-Dispatch `kb-decompose`. It returns the layer plan directly.
+Dispatch `kb-decompose`. It returns only `ac_coverage_complete` and, if false,
+`uncovered_ac` — the layer plan itself lives in the database.
 
 Verify before fanning out:
 
 - `ac_coverage_complete` is true. If not, send it back rather than proceeding
   with a known coverage hole.
-- No task shares a layer with a dependency.
-- No two `parallel_safe` tasks in a layer have overlapping `files_touched`. This
-  check keeps the parallel phase from corrupting itself — verify it directly
-  rather than trusting the flag.
+- `python3 "$RUN_DIR/kb_db.py" get plan-check` returns empty
+  `layer_dep_violations` and empty `parallel_file_conflicts`. This is the same
+  check as before — no task shares a layer with a dependency, and no two
+  `parallel_safe` tasks in a layer share a claimed file — now a query instead
+  of manual verification, so it can't be skipped by mistake.
 
 ### 4. In Progress — parallel fan-out
 
-Process layers in order. Within a layer, dispatch `kb-dev` for all
+For each layer, `python3 "$RUN_DIR/kb_db.py" get layer --n <N>` returns the
+task IDs in that layer, ordered parallel-safe first. Dispatch `kb-dev` for all
 `parallel_safe` tasks in **one `task` call with multiple entries**. omp fans them
 into isolated worktrees and manages the concurrency; you do not batch or throttle
 them yourself.
 
 Run `parallel_safe: false` tasks serially afterward. That flag is not about
-concurrency limits — it marks tasks whose `files_touched` overlap a sibling or
+concurrency limits — it marks tasks whose claimed files overlap a sibling or
 touch shared surface, and running those together produces merge conflicts no
 amount of worktree isolation prevents.
 
 Give each agent only its own task ID and the `run_dir`.
 
-After each layer, read every returned object:
+After each layer, read every returned object — each `kb-dev` now yields only
+`task_id`, `status`, and the booleans below; pull detail from the database when
+one fires:
 
-- `boundary_violations` non-empty → the `files_touched` prediction was wrong. Do
-  not let the agent retry across the boundary. Re-plan: serialize the conflicting
-  tasks into a later layer, or add a follow-up task owning the shared file.
-- `status: "blocked"` → resolve or escalate. Never mark a blocked task done to
-  keep things moving.
-- `preexisting_defects` non-empty → the agent correctly stopped the line. Decide
-  with the user whether it becomes its own task now or is recorded for later. Do
-  not silently drop it; a defect found and forgotten is worse than one never
+- `has_boundary_violations` true → `sql "SELECT path, needed_for FROM
+  boundary_violations WHERE task_id='T1'"`. The claimed-files prediction was
+  wrong. Do not let the agent retry across the boundary. Re-plan: serialize the
+  conflicting tasks into a later layer, or add a follow-up task owning the
+  shared file.
+- `status: "blocked"` → read the returned `blocked_reason`, then resolve or
+  escalate. Never mark a blocked task done to keep things moving.
+- `has_preexisting_defects` true → `sql "SELECT location, evidence FROM
+  defects WHERE task_id='T1'"`. The agent correctly stopped the line. Decide
+  with the user whether it becomes its own task now or is recorded for later.
+  Do not silently drop it; a defect found and forgotten is worse than one never
   found, because the finding cost was already paid.
-- `decisions` and `surprises` → carry into the review agents' assignments. A
-  reviewer who knows why a choice was made reviews the choice; one who does not
-  re-litigates it, which is a rework loop spent on an answered question.
+- `sql "SELECT * FROM decisions WHERE task_id='T1'"` and the task's `notes`
+  (kind `surprise`) → carry into the review agents' assignments. A reviewer who
+  knows why a choice was made reviews the choice; one who does not re-litigates
+  it, which is a rework loop spent on an answered question.
 
 Do not advance while the current layer has blocked tasks — that accumulates work
 in progress without delivering any of it.
 
 ### 5. In Review — two agents over the hub
 
-Once the last layer is done and no task is blocked, set `column: "in_review"` in
-`<run_dir>/state.json` before dispatching. Nothing upstream sets it — `kb-decompose`
-leaves the board at `in_progress` and `kb-critic` advances it to `qa` — so without
-this write an interrupt here resumes into the In Progress fan-out and re-runs it.
+Once the last layer is done and no task is blocked,
+`python3 "$RUN_DIR/kb_db.py" set board board_column=in_review` before
+dispatching. Nothing upstream sets it — `kb-decompose` leaves the board at
+`in_progress` and `kb-critic` advances it to `qa` — so without this write an
+interrupt here resumes into the In Progress fan-out and re-runs it.
 
 Dispatch `kb-review` and `kb-critic` **in the same `task` call** so both are live
 on the hub at once. Give each the other's agent name so they can `hub send` to it.
@@ -202,9 +249,11 @@ Read the critic's returned verdict together with `reviewer_signoff`:
 - `approved` / `approved_with_nits` **and** `reviewer_signoff: confirmed` → step 6
   on the full track, or step 7 on the reduced track (see the track choice in step 1).
 - `reviewer_signoff: objected` → the independent check caught something in the
-  critic's fixes. Read `reviewer_objections` and bring them to the user before
-  advancing. If they choose to proceed, release opens the PR as a draft carrying
-  the objections rather than shipping fixes the reviewer disputed.
+  critic's fixes. Pull the detail with `python3 "$RUN_DIR/kb_db.py" get
+  process-notes` (or `sql "SELECT * FROM notes WHERE kind='reviewer_objection'"`)
+  and bring them to the user before advancing. If they choose to proceed,
+  release opens the PR as a draft carrying the objections rather than shipping
+  fixes the reviewer disputed.
 - `reviewer_signoff: unavailable` → the fixes went unverified. Do not treat that as
   approval; surface it, and if the user proceeds, release drafts the PR with the
   gap noted.
@@ -216,9 +265,10 @@ The critic caps rework at 3. Respect that cap.
 
 **The caveat this guards.** The critic both rules on findings and applies the
 fixes, so its fixes need an independent set of eyes — that is what the reviewer's
-sign-off provides. It is not a full second review; if you see `fixes_applied`
-reaching well beyond the findings that motivated them even with a `confirmed`
-sign-off, raise it with the user rather than proceeding.
+sign-off provides. It is not a full second review; if `python3
+"$RUN_DIR/kb_db.py" get fixes` shows fixes reaching well beyond the findings
+that motivated them even with a `confirmed` sign-off, raise it with the user
+rather than proceeding.
 
 ### 6. QA
 
@@ -239,7 +289,9 @@ the missing start command, which is worth more than shipping unverified.
 ### 7. Done
 
 Dispatch `kb-release`. Give the user the PR URL, release notes, and anything
-flagged: carried nits, flaky tests, skipped e2e, uncovered ACs.
+flagged — pull carried nits, flaky tests, skipped e2e, and uncovered ACs with
+`python3 "$RUN_DIR/kb_db.py" get process-notes` and `get traceability
+--format md`.
 
 On merge conflicts, report the conflicting files and tasks rather than resolving
 them — you have no basis for judging which side is correct.
@@ -253,16 +305,19 @@ to find.
 
 ## Keeping state truthful
 
-Every agent reads and writes `<run_dir>/state.json`. After each column, verify it
-reflects what actually happened. The board makes the cycle resumable and is what
-the user reads to understand progress — a state file claiming "done" for a
-blocked task converts a visible problem into an invisible one.
+Every agent reads and writes the run database through `kb_db.py`. Because
+every `load` is one transaction, a half-written column is impossible — a run
+either reflects the last completed write or it doesn't, never something in
+between. The board makes the cycle resumable and is what the user reads to
+understand progress — a `board_column` claiming "done" for a blocked task
+converts a visible problem into an invisible one, so verify it after each
+column.
 
-If the user interrupts and returns, read `state.json` first and resume from
-`column` rather than restarting. Read `track` too: `kb-critic` sets `column: "qa"`
-on approval regardless of track, so on the reduced track `column: "qa"` means
-review is complete and QA is intentionally skipped — resume at step 7 (release),
-not step 6.
+If the user interrupts and returns, `python3 "$RUN_DIR/kb_db.py" get board`
+first and resume from `board_column` rather than restarting. Read `track` too:
+`kb-critic` sets `board_column: "qa"` on approval regardless of track, so on
+the reduced track `board_column: "qa"` means review is complete and QA is
+intentionally skipped — resume at step 7 (release), not step 6.
 
 ## Reporting
 
@@ -304,16 +359,9 @@ auditing, not as part of a cycle.
 
 ```
 .kanban/runs/<timestamp>-<slug>/
-  state.json           orchestrator state, single source of truth
-  intake.json          classification and scoping
-  backlog.json         epics, stories, acceptance criteria
-  todo.json            tasks, layers, parallel safety
-  progress/<id>.json   per-task implementation report
-  review/findings.json reviewer's first pass
-  review/critique.json critic's independent pass
-  review/verdict.json  reconciled verdict and applied fixes
-  qa-report.json
-  qa-e2e-results.json
-  release.json
+  kanban.db            all board state — query with kb_db.py, never edit by hand
+  kb_db.py             the helper, copied here at run start
+  qa-e2e-results.json  raw Playwright json-reporter output
+  release-notes.md
   retrospective.md
 ```

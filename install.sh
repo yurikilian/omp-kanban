@@ -119,8 +119,8 @@ done
 
 for s in $SKILLS; do
   run mkdir -p "$SKILLS_DIR/$s"
-  run cp "$SRC/skills/$s/SKILL.md" "$SKILLS_DIR/$s/SKILL.md"
-  say "  skills/$s/SKILL.md"
+  run cp -R "$SRC/skills/$s/." "$SKILLS_DIR/$s/"
+  say "  skills/$s/"
 done
 
 # ------------------------------------------------------------- dashboard (opt-in)

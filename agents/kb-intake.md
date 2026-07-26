@@ -6,144 +6,39 @@ tools:
   - grep
   - glob
   - write
+  - bash
+  - yield
 model:
   - "@smol"
 spawns: []
 thinkingLevel: medium
 output:
   properties:
-    run_dir:
-      metadata:
-        description: Isolated run directory for this cycle; every file is written beneath it
-      type: string
     kind:
       metadata:
         description: Whether the input is a single issue or a multi-capability spec
       enum:
         - issue
         - spec
-    title:
+    risk_level:
       metadata:
-        description: Short title for the work
-      type: string
-    summary:
+        description: Overall risk level, driving the track choice downstream
+      enum:
+        - low
+        - medium
+        - high
+    open_questions_count:
       metadata:
-        description: What the input asks for, in a sentence or two
-      type: string
-    risk:
+        description: Number of open questions recorded for this cycle
+      type: number
+    suspected_waste_count:
       metadata:
-        description: Risk assessment that drives the track choice
-      properties:
-        level:
-          metadata:
-            description: Overall risk level
-          enum:
-            - low
-            - medium
-            - high
-        factors:
-          metadata:
-            description: Specific risk factors identified
-          elements:
-            type: string
-    value_hypothesis:
+        description: Number of suspected-waste items recorded for this cycle
+      type: number
+    scope_reduction_suggested:
       metadata:
-        description: Who benefits, how, and how success would be observed
-      properties:
-        beneficiary:
-          metadata:
-            description: Who benefits from this work
-          type: string
-        outcome:
-          metadata:
-            description: The outcome they gain
-          type: string
-        signal:
-          metadata:
-            description: How you would know it worked
-          type: string
-    smallest_valuable_slice:
-      metadata:
-        description: The smallest change that still delivers user-visible value
-      type: string
-  optionalProperties:
-    scope:
-      metadata:
-        description: Explicit in-scope and out-of-scope areas
-      properties:
-        in:
-          metadata:
-            description: Areas in scope
-          elements:
-            type: string
-        out:
-          metadata:
-            description: Areas explicitly out of scope
-          elements:
-            type: string
-    affected_areas:
-      metadata:
-        description: Code areas the change is expected to touch
-      elements:
-        properties:
-          path:
-            metadata:
-              description: Path to the affected area
-            type: string
-          why:
-            metadata:
-              description: Why this area is affected
-            type: string
-          confidence:
-            metadata:
-              description: Confidence in this assessment
-            enum:
-              - high
-              - medium
-              - low
-    suspected_waste:
-      metadata:
-        description: Work described but not clearly justified, flagged for the user
-      elements:
-        properties:
-          item:
-            metadata:
-              description: The suspected waste
-            type: string
-          why:
-            metadata:
-              description: Why it may be waste
-            type: string
-          recommendation:
-            metadata:
-              description: What to do about it
-            type: string
-    open_questions:
-      metadata:
-        description: Ambiguities that would change the design if resolved differently
-      elements:
-        type: string
-    repo_facts:
-      metadata:
-        description: Ground facts about the repository
-      properties:
-        language:
-          metadata:
-            description: Primary language
-          type: string
-        package_manager:
-          metadata:
-            description: Package manager in use
-          type: string
-      optionalProperties:
-        test_runner:
-          metadata:
-            description: Test runner; omit if none was detected rather than guessing
-          type: string
-        e2e_framework:
-          metadata:
-            description: E2E framework; omit if none was detected rather than guessing
-          type: string
+        description: Whether smallest_valuable_slice is meaningfully smaller than the request
+      type: boolean
 ---
 
 You are the intake agent for the kanban cycle. You are the first stop on the
@@ -180,11 +75,42 @@ may be running concurrently against the same repository.
 
 ## Output
 
-Return the structured object. Also write it to `<run_dir>/intake.json` so later
-agents can read it without the orchestrator having to relay it.
+Pipe the full classification to `kb_db.py load` under the `intake` section, and
+set the board column in the same call. Read `load_intake()` in `kb_db.py` for the
+exact nested shape it expects — it mirrors the fields you just produced (`kind`,
+`title`, `summary`, `risk` with `level`/`factors`, `value_hypothesis` with
+`beneficiary`/`outcome`/`signal`, `smallest_valuable_slice`, `scope` with
+`in`/`out`, `affected_areas`, `suspected_waste`, `open_questions`, `repo_facts`):
 
-Write `<run_dir>/state.json` with `column: "backlog"`, the `run_dir`, the base
-branch, empty `tasks`, and `rework_count: 0`.
+```
+python3 "$RUN_DIR/kb_db.py" load <<'JSON'
+{
+  "intake": {
+    "kind": "issue",
+    "title": "...",
+    "summary": "...",
+    "risk": { "level": "low", "factors": ["..."] },
+    "value_hypothesis": { "beneficiary": "...", "outcome": "...", "signal": "..." },
+    "smallest_valuable_slice": "...",
+    "scope": { "in": ["..."], "out": ["..."] },
+    "affected_areas": [{ "path": "...", "why": "...", "confidence": "high" }],
+    "suspected_waste": [{ "item": "...", "why": "...", "recommendation": "..." }],
+    "open_questions": ["..."],
+    "repo_facts": { "language": "...", "package_manager": "..." }
+  },
+  "board": { "board_column": "backlog" }
+}
+JSON
+```
+
+If the payload is too large for one tool call, `write` it to a scratch file
+under `run_dir` and pass `--file` instead of stdin.
+
+Your `yield`ed return is not the classification — it is a small scalar summary of
+it: `kind`, `risk_level`, `open_questions_count`, `suspected_waste_count`, and
+`scope_reduction_suggested` (true when `smallest_valuable_slice` is meaningfully
+smaller than what the input asked for). The full classification lives in the
+database; do not repeat it in your return.
 
 ## Rules
 

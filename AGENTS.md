@@ -29,6 +29,7 @@ on it. See [Hooks and the dashboard](#hooks-and-the-dashboard).
 ```
 agents/               ten subagent definitions, one file per agent
 skills/kanban-cycle/  SKILL.md — the lifecycle orchestrator
+skills/kanban-cycle/kb_db.py  stdlib helper for the per-run SQLite state
 skills/cost-forensics/ SKILL.md — off-board spend audit + self-improvement pass
 hooks/pre/            session_start hook that launches the dashboard (opt-in)
 dashboard/            vendored web app (Express + React); built at install time
@@ -116,18 +117,18 @@ produces unpredictable returns.
 
 ## The agents
 
-| Agent | Role | Returns | Column |
-|---|---|---|---|
-| `kb-intake` | `@smol` | json | classify issue vs spec, scope, value hypothesis |
-| `kb-planner` | `@slow` | prose | epics, stories, acceptance criteria |
-| `kb-decompose` | `@slow` | json | tasks, file claims, dependency layers |
-| `kb-dev` | `@default` | json | one task, strict red-green-refactor |
-| `kb-review` | `@slow` | prose | first-pass findings |
-| `kb-critic` | `@default` | json | challenge, reconcile, apply fixes |
-| `kb-qa` | `@default` | json | full suite, e2e, Playwright scaffold |
-| `kb-release` | `@smol` | json | merge, release notes, PR |
-| `kb-retro` | `@smol` | prose | post-cycle waste audit |
-| `kb-forensics` | `@smol` | prose | session cost audit (off-board) |
+| Agent | Role | Returns | Column | Writes (tables) |
+|---|---|---|---|---|
+| `kb-intake` | `@smol` | json | classify issue vs spec, scope, value hypothesis | `board`, `intake`, `intake_suspected_waste`, `intake_affected_areas`, `notes` |
+| `kb-planner` | `@slow` | json | epics, stories, acceptance criteria | `epics`, `stories`, `acceptance_criteria`, `story_deps`, `deferred_decisions`, `delivery_slices`, `notes` |
+| `kb-decompose` | `@slow` | json | tasks, file claims, dependency layers | `tasks`, `task_deps`, `task_files` (claimed), `task_ac`, `tests` (planned), `test_ac`, `notes` |
+| `kb-dev` | `@default` | json | one task, strict red-green-refactor | `tasks`, `task_files` (changed), `tests`, `test_ac`, `boundary_violations`, `decisions`, `defects`, `suite_runs`, `notes` |
+| `kb-review` | `@slow` | prose | first-pass findings | `findings` (author reviewer), `ac_coverage` |
+| `kb-critic` | `@default` | json | challenge, reconcile, apply fixes | `findings` (author critic + rulings), `fixes`, `fix_ac`, `ac_coverage`, `root_causes`, `root_cause_findings`, `verdicts`, `notes`, `board` |
+| `kb-qa` | `@default` | json | full suite, e2e, Playwright scaffold | `suite_runs`, `ac_coverage`, `failures`, `escapes`, `tests`, `notes`, `board` |
+| `kb-release` | `@smol` | json | merge, release notes, PR | `release`, `release_merges`, `conflicts`, `suite_runs`, `board` |
+| `kb-retro` | `@smol` | prose | post-cycle waste audit | none — read-only, writes `retrospective.md` |
+| `kb-forensics` | `@smol` | prose | session cost audit (off-board) | none — writes `cost-forensics.md`, outside `run_dir` |
 
 Roles are deliberate. `@slow` is reserved for the three places where a wrong call
 compounds across the whole cycle — planning, decomposition, and first-pass
@@ -189,15 +190,27 @@ that do not apply to ordinary code:
 - **Do not add rules without evidence.** Every constraint costs tokens on every
   run and adds surface for misreading. If a rule cannot be tied to an observed
   failure, leave it out.
-- **Keep handoff fields consistent.** One agent's `output` schema is the next
-  agent's input. Changing a field name means changing it in the producer, every
-  consumer, and the skill. `validate.py` does not catch this — check by hand.
+- **Keep handoff fields consistent.** Most handoffs now go through
+  `skills/kanban-cycle/kb_db.py`'s `load` sections rather than one agent's
+  `output` schema feeding the next agent's input directly — and `validate.py`
+  pipes every `load` example in an agent prompt through the real helper
+  (`--dry-run`, rolled back), so a stale section or field name now fails CI
+  instead of the next live run. What it still cannot catch: a `kb_db.py`
+  column *rename* that a prompt's prose forgets to follow, or a `get` view's
+  output shape drifting from what an agent's prose says it returns — check
+  those by hand.
 - **Keep output schemas lean.** Every required field is bookkeeping the model must
   produce on every run. Do not require a field the orchestrator can derive itself —
   especially counts (Anthropic's *Building Effective Agents* names "having to keep
-  an accurate count" as ACI overhead to eliminate). `task_count` was dropped from
-  `kb-decompose` for this reason (the orchestrator counts `layers`), and
-  `suite_result` was made optional in `kb-dev` (`status` already signals green).
+  an accurate count" as ACI overhead to eliminate) — and, since the SQLite
+  migration, **if the orchestrator can query it, it does not belong in `output`
+  at all**. `layers`, `flow_metrics`, `fixes_applied`, and `results` were removed
+  from agent `output` schemas for exactly this reason: each is a `get` view now
+  (`get layer --n N`, `get flow-metrics`, `get fixes`, `get qa`), computed from
+  rows the agent already wrote via `load`. `task_count` was dropped from
+  `kb-decompose` for the same reason before the migration (the orchestrator
+  counted `layers`), and `suite_result` was made optional in `kb-dev`
+  (`status` already signals green).
 
 ## Before committing
 
@@ -250,21 +263,41 @@ back to a developer.
 `kb-critic` keeps its own guards too — form an independent view before reading the
 findings, fix only what survived reconciliation, write the failing test first,
 escalate rather than let a fix grow. It is still a real trade: the sign-off is one
-round, not a full second review, so the skill also flags `fixes_applied` reaching
-well past the findings that motivated them. If you want a fully independent
+round, not a full second review, so the skill also checks `get fixes` for fixes
+reaching well past the findings that motivated them. If you want a fully independent
 arbiter back, split `kb-critic` in two; the verdict schema already carries what a
 separate fixer would need.
 
 **`parallel_safe` is not a WIP limit.** omp owns concurrency and worktree
-isolation. `parallel_safe` marks tasks whose `files_touched` overlap a sibling or
-that modify shared surface — routers, migrations, lockfiles, barrel exports.
-Worktree isolation does not stop those from colliding at merge. An earlier
-version also capped concurrent agents at four; that was removed as duplicated
-harness machinery.
+isolation. `parallel_safe` marks tasks whose claimed files (`task_files` rows
+with `role='claimed'`) overlap a sibling or that modify shared surface —
+routers, migrations, lockfiles, barrel exports. Worktree isolation does not
+stop those from colliding at merge. An earlier version also capped concurrent
+agents at four; that was removed as duplicated harness machinery.
+
+**Per-run SQLite, not JSON artifacts.** Every agent under `agents/` writes
+through `skills/kanban-cycle/kb_db.py` into one `<run_dir>/kanban.db`, rather
+than each writing its own JSON file (`intake.json`, `todo.json`,
+`progress/<id>.json`, etc. — all now dead names `validate.py` bans). Why:
+`acceptance_criteria` is a real table with a primary key, so every downstream
+reference (`task_ac`, `test_ac`, `ac_coverage`, `fix_ac`) is FK-enforced — an
+agent inventing or renumbering an AC id fails at write time instead of
+surfacing as a silent coverage hole at review. The parallel-safety conflict
+check (`SELECT ... FROM task_files a JOIN task_files b ...`) becomes one query
+(`get plan-check`) instead of prose reasoning over a JSON file. Every `load` is
+one transaction, so a half-written run state is impossible, and retries are
+idempotent on natural keys, which matters because `SKILL.md` permits exactly
+one retry per subagent. Why per-run path and no `run_id` column: isolation is
+the directory, not a predicate — no query can accidentally cross runs, and no
+agent can forget to filter by one.
 
 **Run isolation.** Each cycle gets `.kanban/runs/<timestamp>-<slug>/`. Concurrent
 invocations must not share state. Every agent receives `run_dir` in its
-assignment and writes only beneath it.
+assignment and writes only beneath it. `run_dir` **must be an absolute path**:
+`kb-dev` fans out into isolated git worktrees, and a relative path resolves to
+a different, empty `kanban.db` in each one — every dev write would be silently
+lost, with no error. `SKILL.md`'s bootstrap builds `RUN_DIR` with `$(pwd)` for
+exactly this reason.
 
 **Lean principles as mechanism, not commentary.** Each one changes a specific
 decision some agent makes: no `L` estimates in `kb-planner`; unrequired
@@ -286,8 +319,15 @@ behavior or delete it.
   already happened; the value is entirely in changes it prompts. `kb-retro` is
   instructed to say this and to skip trivial cycles.
 - **The full cycle is wrong for small work.** Eight agents on a one-line fix
-  costs more than the fix. The skill picks a track at intake (`state.json.track`):
-  the full board for specs and high-risk issues, a reduced track (decompose → dev →
-  review pair → release, QA only when an AC needs e2e) as the default for low-risk
-  issues. Escalating to the full board is the explicit choice; defaulting to fewer
-  agents is the safe one.
+  costs more than the fix. The skill picks a track at intake (`board.track` in
+  `kanban.db`): the full board for specs and high-risk issues, a reduced track
+  (decompose → dev → review pair → release, QA only when an AC needs e2e) as
+  the default for low-risk issues. Escalating to the full board is the explicit
+  choice; defaulting to fewer agents is the safe one.
+- **Concurrent `kb-dev` writes are unverified against a live omp worktree
+  layout.** `kanban.db` is shared across every worktree in a layer's parallel
+  fan-out; `kb_db.py` opens it in WAL mode with a 10s `busy_timeout` and a
+  5-attempt exponential backoff on `database is locked`, which should cover
+  the fan-out widths this board actually uses, but it has not been load-tested
+  against real concurrent writers. The first real test is the `kb-dev`
+  fan-out itself.

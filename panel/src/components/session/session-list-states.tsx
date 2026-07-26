@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { SessionSummary } from "@/server/sessions/types";
 import { SessionList } from "./session-list";
 
@@ -27,34 +28,36 @@ function errorMessageFromResponseBody(body: unknown, status: number): string {
 export function SessionListStates() {
   const [state, setState] = useState<SessionListState>({ status: "loading" });
 
-  useEffect(() => {
-    async function loadSessions() {
-      try {
-        const response = await fetch("/api/sessions", { cache: "no-store" });
+  const loadSessions = useCallback(async () => {
+    setState({ status: "loading" });
 
-        if (!response.ok) {
-          const body: unknown = await response.json().catch(() => undefined);
-          setState({
-            status: "error",
-            message: errorMessageFromResponseBody(body, response.status),
-          });
-          return;
-        }
+    try {
+      const response = await fetch("/api/sessions", { cache: "no-store" });
 
-        setState({
-          status: "ready",
-          sessions: (await response.json()) as SessionSummary[],
-        });
-      } catch (error) {
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => undefined);
         setState({
           status: "error",
-          message: error instanceof Error && error.message ? error.message : "The sessions request failed.",
+          message: errorMessageFromResponseBody(body, response.status),
         });
+        return;
       }
-    }
 
-    void loadSessions();
+      setState({
+        status: "ready",
+        sessions: (await response.json()) as SessionSummary[],
+      });
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error && error.message ? error.message : "The sessions request failed.",
+      });
+    }
   }, []);
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
 
   if (state.status === "loading") {
     return (
@@ -70,6 +73,9 @@ export function SessionListStates() {
         <h2 className="font-medium text-foreground">Could not load sessions</h2>
         <p className="mt-1 text-sm text-muted-foreground">{state.message}</p>
         <p className="mt-3 text-sm text-muted-foreground">No previously loaded session data is available.</p>
+        <Button type="button" variant="outline" className="mt-4" onClick={loadSessions}>
+          Retry
+        </Button>
       </section>
     );
   }

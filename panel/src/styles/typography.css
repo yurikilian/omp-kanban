@@ -1,0 +1,20 @@
+/*
+ * OMP Prism typography - DESIGN-SYSTEM.md section 15.
+ *
+ * Geist Sans and Geist Mono are vendored in public/fonts under the SIL Open
+ * Font License 1.1. The concrete family names stay here so this stylesheet
+ * remains usable in the browser and in computed-style component tests.
+ */
+body,
+.typography-body {
+  font-family: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+code,
+kbd,
+pre,
+samp,
+.typography-code {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", monospace;
+}

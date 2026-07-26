@@ -47,7 +47,13 @@ export function SessionHeader({ title, status, startedAt, durationMs }: SessionH
       style={headerLineStyle}
     >
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-foreground">{title}</h1>
-      <span className="shrink-0 font-medium text-foreground">{status.label}</span>
+      <span className="inline-flex shrink-0 items-baseline gap-x-1">
+        <span className="font-medium text-foreground">{status.label}</span>
+        <span aria-hidden="true" className="text-muted-foreground">
+          ·
+        </span>
+        <span className="text-xs text-muted-foreground">Derived from {status.basis}</span>
+      </span>
       <span aria-hidden="true" className="shrink-0 text-muted-foreground">
         ·
       </span>

@@ -1,0 +1,160 @@
+/*
+ * OMP Prism application shell - DESIGN-SYSTEM.md section 5 ("Main
+ * Application Shell"): a global bar, application navigation, context panel
+ * and main workspace. Region widths are literal px values (never rem or a
+ * Tailwind spacing scale), matching section 5.2's "Collapsed: 64px" /
+ * "Expanded: 208px" exactly, so a computed-style assertion can compare the
+ * resolved value character-for-character against the spec - see the
+ * rendered-geometry-tests skill and panel/tests/css-canary.test.tsx.
+ */
+
+.app-shell {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.app-shell__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-shell__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* 5.1 Global Bar */
+.global-bar {
+  align-items: center;
+  background-color: hsl(var(--surface-1));
+  border-bottom: 1px solid hsl(var(--border));
+  display: flex;
+  flex: none;
+  gap: 0.75rem;
+  height: 48px;
+  justify-content: space-between;
+  padding: 0 1rem;
+}
+
+.global-bar__project {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-bar__theme-toggle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.global-bar__theme-toggle:hover {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.global-bar__theme-toggle svg {
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+/* 5.2 Application Navigation - width never resolves to auto in either state. */
+.app-nav {
+  background-color: hsl(var(--surface-1));
+  border-right: 1px solid hsl(var(--border));
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  width: 208px;
+}
+
+.app-nav[data-collapsed="true"] {
+  width: 64px;
+}
+
+.app-nav__toggle {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 40px;
+  justify-content: center;
+  width: 100%;
+}
+
+.app-nav__toggle:hover {
+  color: hsl(var(--foreground));
+}
+
+.app-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+}
+
+.app-nav__link {
+  align-items: center;
+  border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  text-decoration: none;
+}
+
+.app-nav__link:hover {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.app-nav__link[aria-current="page"] {
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.app-nav__icon {
+  flex: none;
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+.app-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 5.3 Context Panel - documented default width (280px-360px midpoint); T20
+ * makes this draggable and clamps it within that range.
+ */
+.context-panel {
+  background-color: hsl(var(--surface-1));
+  border-right: 1px solid hsl(var(--border));
+  flex: none;
+  overflow-y: auto;
+  width: 320px;
+}

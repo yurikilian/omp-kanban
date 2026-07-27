@@ -1,0 +1,137 @@
+# omp-kanban — recommended omp settings for running the board.
+#
+# Every key here is a real omp setting, read out of the installed binary's
+# settings registry (v17.1.4). Nothing in this file is invented; nothing in it is
+# enforced by this extension. omp core enforces all of it — this file only tells
+# it to.
+#
+# Two ways to use it:
+#
+#   omp --config ~/.omp/agent/omp-kanban-guardrails.yml     # per run, reversible
+#   ./install.sh --apply-config                              # merge into config.yml
+#
+# Why these numbers: one real cycle spent 291 million accumulated tokens across
+# 2,435 model calls, 96.83% of them cache reads, with zero compactions and
+# prompts reaching 301K tokens. Six workers ran at once, each resending its whole
+# growing session on every round. The defaults below are deliberately
+# conservative — see docs/CONFIGURATION.md before raising any of them.
+
+task:
+  # Turn budget. omp injects a wrap-up notice at this number of assistant
+  # requests and force-stops the subagent at 1.5x it — so 40 gives a soft limit
+  # of 40 and a hard limit of 60. The incident had workers making 100-170.
+  softRequestBudget: 40
+  softRequestBudgetNotice: true
+
+  # Concurrent subagents. omp's default is 32; the incident ran six at once.
+  # The guardrails hook enforces the board's own per-role caps on top of this.
+  maxConcurrency: 2
+
+  # Wall-clock backstop per subagent, for provider-side stream hangs that escape
+  # the inference watchdog. 0 (omp's default) disables it.
+  maxRuntimeMs: 1800000
+
+  # `lsp` is unavailable to subagents unless this is on. Left OFF deliberately —
+  # omp's default, and the reason kb-dev and kb-critic use `ast_grep` for
+  # cross-file edits instead. Turning it on costs tokens in every worker; only
+  # do so if you have measured that LSP-aware delegation earns them back.
+  enableLsp: false
+
+  # Prewalk: start the agent on its resolved model, then hand off to a cheaper
+  # one at its first edit/write. Keyed by agent name; "on" uses the "@smol"
+  # role, "off" disables, any other string names the target model or role.
+  #
+  # Left commented out on purpose. On kb-dev the first write is the first
+  # *test*, so enabling this runs nearly the whole TDD loop on @smol — a real
+  # saving on the highest-volume column, and a real quality risk that nobody
+  # here has measured. AGENTS.md's rule about not changing a model role without
+  # a reason you can state cuts both ways. Enable it, run a cycle, and compare
+  # the review findings before you leave it on.
+  #
+  # agentPrewalk:
+  #   kb-dev: "on"
+
+compaction:
+  # The incident recorded zero compaction events while prompts reached 301K
+  # tokens. A fixed token threshold triggers regardless of the model's context
+  # window, which a percentage does not.
+  enabled: true
+  thresholdTokens: 100000
+  keepRecentTokens: 20000
+  # Check thresholds at mid-turn tool-loop boundaries, not only between turns —
+  # a long tool loop is exactly where a session grows without a turn boundary.
+  midTurnEnabled: true
+  supersedeReads: true
+
+providers:
+  # Concurrent LLM requests per provider id, shared across every local omp
+  # process using this config root. This is the only cap that spans processes,
+  # and it is what stops a batch from being handed to the fallback provider all
+  # at once. Provider ids not listed here stay unlimited.
+  maxInFlightRequests:
+    anthropic: 2
+    openai-codex: 1
+
+  # Stream watchdogs. omp's default is -1 ("use provider/env defaults"), which
+  # on a silently dead stream means the subagent burns its whole
+  # task.maxRuntimeMs before anyone notices. Explicit values fail it in minutes
+  # and let the normal abort path record a resumable state.
+  streamFirstEventTimeoutSeconds: 120
+  streamIdleTimeoutSeconds: 300
+
+retry:
+  # When a provider asks for a longer wait than this and no credential or model
+  # fallback succeeds, fail fast instead of sleeping. Anthropic's rate-limit
+  # windows can be hours; sleeping through one blocks the board with no signal.
+  maxDelayMs: 300000
+  maxRetries: 5
+  modelFallback: true
+  # Prefer a same-provider account, then a configured fallback, before hitting a
+  # hard usage limit. Off by default in omp.
+  usageAwareFallback: true
+  usageReservePct: 10
+  usageReservePolicy: confirm
+  fallbackRevertPolicy: cooldown-expiry
+
+tools:
+  # Tool output above the spill threshold is written to an artifact and elided
+  # inline, keeping the head and the tail. Truncation is explicit and the full
+  # output stays on disk — which is the behavior the board's agents are told to
+  # rely on, so lowering it is what makes that instruction true.
+  artifactSpillThreshold: 20   # KB
+  artifactHeadBytes: 5         # KB
+  artifactTailBytes: 10        # KB
+  artifactTailLines: 250
+  outputMaxColumns: 512
+
+model:
+  # Stop a subagent stuck calling the same tool with the same arguments.
+  toolCallLoopGuard:
+    enabled: true
+    threshold: 4
+
+# Default timeout for `hub` waits. omp's default is 120000 (2 minutes), which is
+# shorter than kb-critic's independent review pass — so the reviewer, which
+# finishes first and then waits, times out before the exchange ever opens and the
+# cycle records reviewer_signoff: unavailable for purely ordering reasons.
+# kb-critic also sends an early ack for the same reason; this is the other half.
+irc:
+  timeoutMs: 300000
+
+# The next three are already omp's defaults. They are pinned here because they
+# are the settings that make the agents' instructions true — "return a summary
+# and a log path" only works if something is actually compressing the output —
+# and a config that has quietly turned one off should be corrected, not trusted.
+shellMinimizer:
+  # Compresses verbose git/npm/cargo output before the model ever sees it.
+  enabled: true
+
+read:
+  summarize:
+    # Structural summaries when `read` is called with no explicit selector,
+    # instead of whole files.
+    enabled: true
+
+checkpoint:
+  # Lets an interrupted session be rewound rather than redone.
+  enabled: true

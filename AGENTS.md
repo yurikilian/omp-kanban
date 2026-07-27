@@ -31,14 +31,19 @@ agents/               ten subagent definitions, one file per agent
 skills/kanban-cycle/  SKILL.md — the lifecycle orchestrator
 skills/kanban-cycle/kb_db.py  stdlib helper for the per-run SQLite state
 skills/cost-forensics/ SKILL.md — off-board spend audit + self-improvement pass
-hooks/pre/            session_start hook that launches the dashboard (opt-in)
+guardrails/           RUNTIME-POLICY.md (one source for the shared agent rules)
+                      + omp-config.recommended.yml (conservative omp settings)
+hooks/pre/            kb-guardrails.ts — the dispatch gate (installed always)
+                      kb-dashboard.ts — launches the dashboard (opt-in)
 dashboard/            vendored web app (Express + React); built at install time
-docs/                 kanban-flow.dot + rendered kanban-flow.png (README diagram)
+docs/                 CONFIGURATION.md, kanban-flow.dot + .png (README diagram)
+tests/                python unittest + node --test; ./tests/run.sh runs both
 install.sh            copies definitions into an omp discovery root
 uninstall.sh          thin wrapper over `install.sh --uninstall`
 validate.py           schema validation; run before every commit
+sync-guardrails.py    regenerates the shared guardrail block in every prompt
 package.json          omp extension manifest
-.github/workflows/    CI: validate + installer smoke test
+.github/workflows/    CI: validate + tests + installer smoke test
 ```
 
 ## How omp loads this
@@ -138,9 +143,22 @@ person running it is budget-constrained.
 
 ## Hooks and the dashboard
 
-`hooks/pre/kb-dashboard.ts` is a `session_start` hook that launches the vendored
-`dashboard/` app. It is not part of the board — it is infrastructure that happens
-to ship alongside it, installed only with `./install.sh --with-dashboard`.
+Two hooks ship here, and they are unrelated to each other.
+
+**`hooks/pre/kb-guardrails.ts` is the dispatch gate**, installed on every
+install. It binds `tool_call` and `tool_result` and examines only `task` calls
+whose items name a `kb-*` agent — anything else returns before it reads state, so
+it is inert in every session that is not running the board. It enforces batch
+width, packet size, retry deduplication, and the provider circuit breaker; all
+decision logic is exported pure functions taking `(state, input, now, rng)`, so
+the rules are tested with a fake clock rather than by waiting on a real provider
+window. Every internal failure is caught and allows the call. `KB_GUARD_DISABLED=1`
+turns it off without uninstalling. Details in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+**`hooks/pre/kb-dashboard.ts` is a `session_start` hook** that launches the
+vendored `dashboard/` app. It is not part of the board — it is infrastructure that
+happens to ship alongside it, installed only with `./install.sh --with-dashboard`.
 
 **The hook is a cross-session singleton launcher.** Its whole job is to guarantee
 *one* dashboard across every omp session, never one-per-session:
@@ -181,6 +199,12 @@ omp's TS hook runtime exposes Node builtins and `import.meta.url`, and that
 The body of each file becomes a system prompt verbatim. That has consequences
 that do not apply to ordinary code:
 
+- **The `kb-guardrails` block at the bottom is generated — do not edit it there.**
+  It is copied into all ten agents and both skills from
+  `guardrails/RUNTIME-POLICY.md`. Edit the source, run `./sync-guardrails.py`,
+  commit both. A local edit is overwritten by the next sync and fails
+  `validate.py` in the meantime. The same rule applies to the copies inside
+  `skills/*/SKILL.md`.
 - **Instructions are load-bearing prose.** Rewording for style can change
   behavior. If you are editing for clarity, keep the imperatives intact.
 - **Explain the reasoning, not just the rule.** "Mark unsafe when in doubt"
@@ -215,16 +239,25 @@ that do not apply to ordinary code:
 ## Before committing
 
 ```bash
-./validate.py
+./validate.py     # structure
+./tests/run.sh    # behavior (also runs validate.py)
 ```
 
-Exits non-zero on error. It checks frontmatter against omp's schema, catches
-bundled-name collisions, verifies `output`/prose exclusivity, validates the
-manifest, confirms every agent the skill dispatches exists, and parses every
-JSON example in every file.
+`validate.py` exits non-zero on error. It checks frontmatter against omp's
+schema, catches bundled-name collisions, verifies `output`/prose exclusivity,
+validates the manifest, confirms every agent the skill dispatches exists, checks
+each hook subscribes to a real omp event, verifies the shared guardrail block has
+not drifted from its source, and parses every JSON example in every file.
 
-CI runs the same validator plus an installer smoke test — real install, assert
-ten agents present, uninstall, assert cleanup.
+`tests/run.sh` runs the validator, the Python tests for `kb_db.py`, and the
+Node tests for the dispatch hook. No dependencies beyond Python 3 and Node
+22.6+ (which runs the `.ts` hook directly via type stripping).
+
+CI runs all of that plus an installer smoke test — real install, assert ten
+agents and both hooks present, uninstall, assert cleanup.
+
+**If you edit an agent's shared guardrail block, you edited the wrong file.**
+Edit `guardrails/RUNTIME-POLICY.md`, run `./sync-guardrails.py`, and commit both.
 
 ## Testing changes for real
 
@@ -268,12 +301,41 @@ reaching well past the findings that motivated them. If you want a fully indepen
 arbiter back, split `kb-critic` in two; the verdict schema already carries what a
 separate fixer would need.
 
-**`parallel_safe` is not a WIP limit.** omp owns concurrency and worktree
-isolation. `parallel_safe` marks tasks whose claimed files (`task_files` rows
-with `role='claimed'`) overlap a sibling or that modify shared surface —
-routers, migrations, lockfiles, barrel exports. Worktree isolation does not
-stop those from colliding at merge. An earlier version also capped concurrent
-agents at four; that was removed as duplicated harness machinery.
+**`parallel_safe` is not a WIP limit.** omp owns worktree isolation.
+`parallel_safe` marks tasks whose claimed files (`task_files` rows with
+`role='claimed'`) overlap a sibling or that modify shared surface — routers,
+migrations, lockfiles, barrel exports. Worktree isolation does not stop those
+from colliding at merge. The WIP limit is a separate, code-enforced thing: see
+below.
+
+**Concurrency is capped in code, because prose did not hold.** An earlier version
+capped concurrent agents at four in prose, then removed it as "duplicated harness
+machinery" on the belief that omp owned it. omp does not: `task.maxConcurrency`
+defaults to **32**, so the width the skill asks for is the width it gets. A real
+cycle then ran six high-effort workers at once, exhausted Anthropic, failed the
+whole batch over to the fallback provider simultaneously, exhausted that too, and
+reproduced it on retry — 291M accumulated tokens, 96.83% of them cache reads,
+zero compactions.
+
+`hooks/pre/kb-guardrails.ts` now enforces the caps where omp actually gives an
+extension a veto: a `tool_call` handler returning `{block, reason}` makes
+`HookToolWrapper.execute` throw that reason instead of running the tool. It gates
+batch width, packet size, duplicate dispatch, and dispatch during a provider
+rate-limit window — and only for `task` calls naming a `kb-*` agent, so it is
+inert everywhere else. Everything it cannot enforce is a documented omp setting,
+not a claim. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the split.
+
+**Shared agent rules have one source.** `guardrails/RUNTIME-POLICY.md` is copied
+into every agent and skill by `./sync-guardrails.py`; `validate.py` fails on
+drift. Generated rather than included at runtime because omp has no import
+mechanism for agent bodies — a `.md` body is a system prompt verbatim, and
+"go read this file" costs a tool call per agent per run and can be skipped.
+
+**Reviewer independence is a property of the query.** `get findings --author
+reviewer` and `get findings --merged` both fail until an `author='critic'` row
+exists. The critic already had "form your own view first" as prose; independence
+is the entire product of a second reviewer and the first thing dropped under
+pressure, so it is now enforced the same way task scoping is.
 
 **Per-run SQLite, not JSON artifacts.** Every agent under `agents/` writes
 through `skills/kanban-cycle/kb_db.py` into one `<run_dir>/kanban.db`, rather
@@ -315,6 +377,19 @@ behavior or delete it.
   emits. What has *not* been run against a live omp is the cycle itself: whether
   each agent does what its prompt says, and whether the `output` schemas round-trip
   through `yield` exactly as assumed.
+- **The guardrails hook gates dispatch, not model calls.** An extension cannot
+  break a circuit around a provider request — omp core owns retry, `Retry-After`
+  parsing, and `retry.fallbackChains`. What the hook can do is refuse to start
+  new sessions, which is what the incident actually needed, but the two are not
+  the same thing and this repo should not claim otherwise. It also cannot see a
+  429 that never reaches a tool result, and it infers the provider from the error
+  text rather than from a structured field, because no structured field is
+  exposed to hooks.
+- **The turn budget belongs to omp, not here.** `task.softRequestBudget` and its
+  1.5× force-stop are what actually cap a worker's rounds. This repo ships the
+  recommended value and tells agents what to do when they approach it; if you do
+  not apply the config, the prompt guidance is all that is left, and prompt
+  guidance is not a limit.
 - **The retrospective cannot save money on the cycle it audits.** That spend
   already happened; the value is entirely in changes it prompts. `kb-retro` is
   instructed to say this and to skip trivial cycles.

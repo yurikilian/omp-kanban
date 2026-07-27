@@ -1,7 +1,7 @@
 {
   "name": "omp-kanban",
   "version": "0.1.0",
-  "description": "A kanban development lifecycle for omp: plans an issue or spec into user stories and acceptance criteria, implements tasks in parallel with TDD, reviews with two agents negotiating over IRC, verifies end to end, and opens a pull request.",
+  "description": "A kanban development lifecycle for omp: plans an issue or spec into user stories and acceptance criteria, implements tasks in parallel with TDD, reviews with two agents negotiating over the hub, verifies end to end, and opens a pull request.",
   "keywords": [
     "omp",
     "oh-my-pi",
@@ -12,6 +12,7 @@
     "lean"
   ],
   "license": "MIT",
+  "type": "module",
   "author": "yurikilian",
   "repository": {
     "type": "git",
@@ -25,14 +26,18 @@
     "agents",
     "skills",
     "hooks",
+    "guardrails",
     "dashboard",
     "docs",
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "./tests/run.sh"
+  },
   "omp": {
     "name": "omp-kanban",
-    "description": "Kanban development lifecycle: plan, parallel TDD, two-agent review over IRC, QA, and PR.",
+    "description": "Kanban development lifecycle: plan, parallel TDD, two-agent review over the hub, QA, and PR.",
     "extensions": []
   }
 }

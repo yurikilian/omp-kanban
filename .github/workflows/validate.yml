@@ -14,10 +14,22 @@ jobs:
         with:
           python-version: '3.x'
 
+      # Node 22.6+ runs the TypeScript hook directly via type stripping, so the
+      # guardrail tests need no build step and no dependencies.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - run: pip install pyyaml
 
       - name: Validate agent and skill definitions
         run: ./validate.py
+
+      - name: Guardrails are in sync with their single source
+        run: ./sync-guardrails.py --check
+
+      - name: Tests
+        run: ./tests/run.sh
 
       - name: Check installer syntax
         run: |
@@ -36,7 +48,24 @@ jobs:
           test -f .omp/skills/cost-forensics/SKILL.md
           test "$(ls .omp/agents/*.md | wc -l)" -eq 10
           test "$(ls -d .omp/skills/*/ | wc -l)" -eq 2
+          test -f .omp/hooks/pre/kb-guardrails.ts
+          test -f .omp/omp-kanban-guardrails.yml
           ./uninstall.sh --project
           test ! -d .omp/skills/kanban-cycle
           test ! -d .omp/skills/cost-forensics
           test ! -f .omp/agents/kb-critic.md
+          test ! -f .omp/hooks/pre/kb-guardrails.ts
+          test ! -f .omp/omp-kanban-guardrails.yml
+
+      - name: Recommended config is valid YAML and uses only real omp keys
+        run: |
+          python3 - <<'PY'
+          import yaml
+          cfg = yaml.safe_load(open("guardrails/omp-config.recommended.yml"))
+          assert cfg["task"]["softRequestBudget"] == 40, "soft turn budget"
+          assert cfg["task"]["maxConcurrency"] == 2, "subagent concurrency cap"
+          assert cfg["compaction"]["thresholdTokens"] == 100000
+          assert cfg["compaction"]["keepRecentTokens"] == 20000
+          assert cfg["providers"]["maxInFlightRequests"]["anthropic"] == 2
+          print("recommended config OK")
+          PY

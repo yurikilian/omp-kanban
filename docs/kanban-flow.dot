@@ -15,9 +15,9 @@ digraph kanban {
   track  [label=<<b>Track?</b>>, shape=diamond, fillcolor="#FFFFFF", height=0.9];
 
   backlog [label=<<b>Backlog</b><br/><font point-size="9">kb-planner · slow</font><br/><font point-size="9">epics · stories · acceptance criteria</font>>, fillcolor="#F4C77B"];
-  todo [label=<<b>Todo</b><br/><font point-size="9">kb-decompose · slow</font><br/><font point-size="9">tasks · layers · file claims</font>>, fillcolor="#F4C77B"];
-  dev [label=<<b>In Progress</b><br/><font point-size="9">kb-dev · default</font><br/><font point-size="9">parallel TDD per layer</font>>, fillcolor="#9EC5F0"];
-  review [label=<<b>In Review</b><br/><font point-size="9">kb-review (slow) + kb-critic (default) · over IRC</font><br/><font point-size="9">critic applies fixes → reviewer verifies (reviewer_signoff)</font>>, fillcolor="#9EC5F0"];
+  todo [label=<<b>Todo</b><br/><font point-size="9">kb-decompose · slow</font><br/><font point-size="9">tasks · layers · file claims · size</font>>, fillcolor="#F4C77B"];
+  dev [label=<<b>In Progress</b><br/><font point-size="9">kb-dev · default</font><br/><font point-size="9">TDD in bounded batches — 2 workers at a time</font>>, fillcolor="#9EC5F0"];
+  review [label=<<b>In Review</b><br/><font point-size="9">kb-review (slow) + kb-critic (default) · bounded pair over the hub</font><br/><font point-size="9">critic records its own findings first, then reconciles and applies fixes</font><br/><font point-size="9">reviewer verifies the fixes (reviewer_signoff)</font>>, fillcolor="#9EC5F0"];
   qa [label=<<b>QA</b><br/><font point-size="9">kb-qa · default</font><br/><font point-size="9">full suite · integration · e2e</font>>, fillcolor="#9EC5F0"];
   done [label=<<b>Done</b><br/><font point-size="9">kb-release · smol</font><br/><font point-size="9">merge · release notes · PR</font>>, fillcolor="#B7D9B1"];
   retro [label=<<b>Retrospective</b><br/><font point-size="9">kb-retro · smol</font><br/><font point-size="9">process waste audit</font>>, fillcolor="#B7D9B1"];
@@ -32,8 +32,16 @@ digraph kanban {
   backlog -> todo;
   track -> todo [label=" low-risk issue\l (reduced track)\l", style=dashed];
 
-  todo -> dev;
+  gate [label=<<b>plan-check</b><br/><font point-size="9">oversized_tasks · file conflicts · layer deps</font>>, shape=diamond, fillcolor="#FFFFFF", height=1.0, width=2.2];
+  pause [label=<<b>Infrastructure pause</b><br/><font point-size="9">rate limit → dispatch blocked</font><br/><font point-size="9">worktrees preserved · resume with 1 canary</font>>, fillcolor="#F0C9C9", style="rounded,filled,dashed"];
+
+  todo -> gate;
+  gate -> todo [label=" oversized —\l split it\l", style=dashed, color="#B0662A", fontcolor="#B0662A"];
+  gate -> dev [label=" clear "];
   dev -> review;
+
+  dev -> pause [label=" 429 / usage limit ", style=dashed, color="#B03A3A", fontcolor="#B03A3A"];
+  pause -> dev [label=" deadline passed:\l one canary, then 2\l", style=dashed, color="#B03A3A", fontcolor="#B03A3A"];
 
   review -> review [label="rework ≤ 3", style=dashed, color="#B0662A", fontcolor="#B0662A"];
   review -> qa [label=" full: approved "];
@@ -53,6 +61,8 @@ digraph kanban {
       <tr><td bgcolor="#F4C77B" width="26"> </td><td align="left">slow · deep reasoning</td></tr>
       <tr><td align="center"><font color="#B0662A">– –</font></td><td align="left">rework / retry loops (capped)</td></tr>
       <tr><td align="center">– –</td><td align="left">reduced track (skips Backlog, QA, Retro)</td></tr>
+      <tr><td bgcolor="#F0C9C9" width="26"> </td><td align="left">infrastructure pause — not a task failure</td></tr>
+      <tr><td colspan="2" align="left">Concurrency caps (code-enforced): 2 workers, 2 reviewers, 1 canary</td></tr>
       <tr><td colspan="2" align="left">User checkpoints: Intake, Backlog, escalation</td></tr>
     </table>
   >];

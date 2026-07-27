@@ -205,7 +205,9 @@ because everything below depends on it.>
 always; currency only if pricing was verifiable.>
 
 ## Expensive patterns found
-<ordered by cost, each with evidence>
+<ordered by cost; each finding as its own `### <finding title>` subsection,
+using the finding's exact title text as the heading, so it can be checked
+against audit.json>
 
 ## Recommended changes
 <config, role, and read/tooling knobs on what already exists — ranked by expected
@@ -283,34 +285,107 @@ bundle.
 
 #### `audit.json`
 
-Canonical structured output — the data the panel reads and renders. Per the
-audit bundle contract (`panel/docs/audit-bundle.md`), it carries coverage and
-measurement gaps, session totals, cost and token breakdowns, findings,
-proposals, ranking, confidence, savings ranges, evidence references, and
-methodology notes.
-
+Canonical structured output — the data the panel reads and renders.
 Findings are Step 3's expensive patterns and proposals are Step 5's
-self-improvements. Use `null`, never a guessed number, for any value pricing
-made unavailable. When `status` is `insufficient_signal` or `failed`,
-`findings` and `proposals` are empty arrays — the gaps and methodology fields
-explain why, never a manufactured finding in their place.
+self-improvements. The shape below is enforced at read time by the runtime
+schema in `panel/src/server/audits/bundle-schema.ts` — conform to it
+exactly, field names included.
+
+| Field | Type | Notes |
+|---|---|---|
+| `schemaVersion` | number | `1` for this contract — the same contract-wide version as `manifest.json`, bumped only if any of the four files' shapes change. |
+| `auditId` | string | From your assignment, verbatim. |
+| `coverageGaps` | string[] | What could not be measured, and why. May be empty when nothing was ungapped. |
+| `sessionTotals` | object | `{ inputTokens, outputTokens, cost, currency }` — see below. |
+| `findings` | Finding[] | Ordered highest impact first — that order *is* the ranking; there is no separate rank field. Empty when `status` is `insufficient_signal` or `failed`. |
+| `proposals` | Proposal[] | Step 5's self-improvements. Empty when `status` is `insufficient_signal` or `failed`. |
+| `methodology` | string | Enough that a reader can tell how a number was reached. Never empty. |
+
+`sessionTotals` — stated once, directly, by you. Never the arithmetic sum
+of `estimatedSavings` across findings that share evidence, which would
+double-count whatever they jointly cite:
+
+| Field | Type | Notes |
+|---|---|---|
+| `inputTokens`, `outputTokens` | number \| null | `null` only when no usage data was ever recorded for the session — the same null-means-unmeasured rule the panel's own session list uses. |
+| `cost` | number \| null | `null` whenever pricing was unavailable. |
+| `currency` | string \| null | `null` exactly when `cost` is `null`. This one field decides pricing availability for the *entire audit*: once it is `null`, every other cost figure below — every finding's `observedImpact.cost` and `estimatedSavings.cost`, every proposal's `expectedSavings.cost` — must also be `null`. A non-`null` cost anywhere once `currency` is `null` is a guess, and the schema rejects the whole document for it. |
+
+A finding:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Referenced by `wastePrevented` on the proposals that address it. |
+| `category` | string | Free text. Use a Step 3 pattern name where one fits — `redundant_context`, `role_misassignment`, `large_tool_result`, `wide_fanout`, `rework`, `failed_retry`, `long_session_no_compaction` — and coin a new one when none does. |
+| `title` | string | Short and human-readable. Rendered verbatim as this finding's `### ` subsection heading in `report.md` — see below. |
+| `severity` | `"low" \| "medium" \| "high"` | |
+| `confidence` | `"low" \| "medium" \| "high"` | How sure the pattern is real and reproducible — not whether it was measured or estimated, which is what `estimatedSavings` and the measured/estimated marking in Steps 4-5 are for. |
+| `summary` | string | One or two sentences. |
+| `observedImpact` | object | `{ inputTokens, outputTokens, cost }`, each `number \| null`. What actually happened, measured — not a projection. A real zero (this dimension genuinely contributed nothing) is `0`, never `null`; `null` means that dimension could not be measured at all, which is a different fact. |
+| `estimatedSavings` | object | `{ inputTokens?, outputTokens?, cost }`. `inputTokens`/`outputTokens` are each a `{ minimum, likely, maximum }` range, present only when this finding has a savings estimate for that dimension — omit the key entirely when it does not, never a zeroed-out range. `cost` is always present, either a `{ minimum, likely, maximum }` range or `null` — the pricing rule above. |
+| `evidenceIds` | string[] | ids of the `evidence.jsonl` records this finding cites. |
+| `causalChain` | string[] | The mechanism, in steps, where useful; may be empty. |
+| `limitations` | string[] | Caveats on the estimate — e.g. shared evidence with another finding; may be empty. |
+| `proposalIds` | string[] | ids of the proposals in this same `audit.json` that address this finding. |
+
+A proposal:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | |
+| `type` | `"hook" \| "skill" \| "agent"` | Step 5's three machinery layers. |
+| `title` | string | Short and human-readable. |
+| `wastePrevented` | string[] | ids of the findings this proposal addresses. |
+| `expectedSavings` | object | Same shape as a finding's `estimatedSavings`. |
+| `maintenanceCost` | `"low" \| "medium" \| "high"` | |
+| `implementationRisk` | `"low" \| "medium" \| "high"` | |
+| `filesLikelyAffected` | string[] | May be empty. |
+| `validationPlan` | string[] | How the user would confirm the saving after applying it; may be empty. |
+| `automaticApplicationAllowed` | `false` | Always `false` — nothing in the panel applies a proposal, ever. Never write `true`; the schema rejects it. |
+
+When `status` is `insufficient_signal` or `failed`, `findings` and
+`proposals` are both empty arrays; `coverageGaps` and `methodology` explain
+why — never a manufactured finding in their place.
 
 #### `report.md`
 
 The same template as the off-board report above, written into the bundle
 instead of to a standalone path. It must never disagree with `audit.json`:
 every finding named there appears in the report, and the report names no
-finding `audit.json` does not have.
+finding `audit.json` does not have. Render each finding as its own
+`### <finding title>` subsection under `## Expensive patterns found`, using
+the finding's `title` field verbatim as the heading text — a heading that
+does not match a finding's `title` exactly is what "disagree" means here,
+and is exactly what the panel's read-time check compares.
 
 #### `evidence.jsonl`
 
-One JSON object per line — not a JSON array — one line per distinct piece of
-evidence a finding or proposal cites by id. Each record carries an evidence
-id, the session id, a reference to the specific event it came from, the agent
-id, a timestamp, the event type, the measured values, a short explanation, a
-bounded excerpt or digest, and a source location. Never copy an entire large
-tool result into a record — see `panel/docs/audit-bundle.md` for the exact
-fields and the excerpt bound.
+One JSON object per line — not a JSON array — one line per distinct piece
+of evidence a finding or proposal cites by id (`evidenceIds`,
+`wastePrevented`). Enforced at read time by the same runtime schema as
+`audit.json` (`panel/src/server/audits/bundle-schema.ts`).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Referenced by a finding's `evidenceIds` or a proposal's `wastePrevented`. |
+| `sessionId` | string | |
+| `eventRef` | string | A stable reference to the source event or tool result — e.g. a message index plus tool-call ordinal. |
+| `agentId` | string | |
+| `timestamp` | string (ISO 8601) | |
+| `eventType` | string | e.g. `tool_call`, `tool_result`, `message`. |
+| `toolName` | string | Present only when `eventType` is tool-related; omit otherwise. |
+| `measured` | object (string → number) | The specific numbers this record backs. At least one entry — a record measuring nothing has no reason to exist. |
+| `explanation` | string | One sentence: why this backs the finding or proposal it supports. |
+| `excerpt` | string | A bounded excerpt of the source content, at most 2000 characters. |
+| `digest` | string | A content hash, used instead of `excerpt` once the source content is longer than the 2000-character bound. |
+| `sourceLocation` | string | File plus line/offset, or an equivalent locator. |
+
+Exactly one of `excerpt`/`digest` is present on a given record — never
+both, never neither, and never copy an entire large tool result into
+`excerpt`. Past 2000 characters, summarize into `explanation` and cite
+`digest` instead. The bound is `EVIDENCE_EXCERPT_MAX_LENGTH` in
+`panel/src/server/audits/bundle-schema.ts` — chosen to match the `head -c
+2000` this same agent already uses in Step 1, so one bound governs both.
 
 ### Two outcomes that are not a completed audit
 

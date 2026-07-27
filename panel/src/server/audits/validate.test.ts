@@ -51,6 +51,21 @@ describe("a malformed bundle records an invalid-output state naming the offendin
       expect.objectContaining({ file: "evidence.jsonl", location: "line 2" }),
     );
   });
+
+  it("a failed-status manifest missing its required failureSummary names that field", () => {
+    const result = validateAuditBundle(bundlePath("bundle-failed-without-summary"));
+
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("unreachable");
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ file: "manifest.json", location: "failureSummary" }),
+    );
+    // The manifest itself is what failed to validate, so there is no
+    // validated manifest to resolve a session from - unlike the audit.json
+    // and evidence.jsonl failures above, this bundle is not attached to any
+    // session.
+    expect(result.manifest).toBeNull();
+  });
 });
 
 describe("an unsupported schema version is reported, not parsed optimistically (E4-S5-AC3)", () => {

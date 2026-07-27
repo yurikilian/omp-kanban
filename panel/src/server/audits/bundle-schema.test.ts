@@ -41,3 +41,19 @@ describe("audit.json shape (E4-S4-AC3)", () => {
     expect(audit.methodology.length).toBeGreaterThan(0);
   });
 });
+
+describe("pricing-unavailable values are null, not a guess (E4-S4-AC3)", () => {
+  it("a value whose pricing was unavailable is null rather than a guess", () => {
+    const tokenOnly = parseAuditReport(readJsonFixture("audit-valid-token-only.json"));
+
+    expect(tokenOnly.sessionTotals.cost).toBeNull();
+    expect(tokenOnly.sessionTotals.currency).toBeNull();
+    expect(tokenOnly.findings[0].observedImpact.cost).toBeNull();
+    expect(tokenOnly.findings[0].estimatedSavings.cost).toBeNull();
+    expect(tokenOnly.proposals[0].expectedSavings.cost).toBeNull();
+
+    // sessionTotals.currency is null (no pricing source), so a non-null cost
+    // anywhere in the document is a guess the schema refuses to accept.
+    expect(() => parseAuditReport(readJsonFixture("audit-invalid-guessed-cost.json"))).toThrow();
+  });
+});

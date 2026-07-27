@@ -93,17 +93,45 @@ const proposalSchema = z.object({
   automaticApplicationAllowed: z.literal(false),
 });
 
-export const auditReportSchema = z.object({
-  schemaVersion: z.literal(1),
-  auditId: z.string().min(1),
-  coverageGaps: z.array(z.string()),
-  sessionTotals: sessionTotalsSchema,
-  // Ordered highest impact first - that order *is* the ranking; there is
-  // no separate rank field (panel/docs/audit-bundle.md).
-  findings: z.array(findingSchema),
-  proposals: z.array(proposalSchema),
-  methodology: z.string().min(1),
-});
+export const auditReportSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    auditId: z.string().min(1),
+    coverageGaps: z.array(z.string()),
+    sessionTotals: sessionTotalsSchema,
+    // Ordered highest impact first - that order *is* the ranking; there is
+    // no separate rank field (panel/docs/audit-bundle.md).
+    findings: z.array(findingSchema),
+    proposals: z.array(proposalSchema),
+    methodology: z.string().min(1),
+  })
+  .superRefine((audit, ctx) => {
+    // sessionTotals.currency is the single fact that decides pricing
+    // availability for the whole document (E4-S1-AC4: an audit either has
+    // pricing or runs token-only, never partially). Once it is null, every
+    // other cost figure in the bundle must be null too - a non-null cost
+    // anywhere past that point is a guess, not a measurement.
+    if (audit.sessionTotals.currency !== null) return;
+
+    const rejectIfGuessed = (cost: number | SavingsRange | null, path: (string | number)[]) => {
+      if (cost === null) return;
+      ctx.addIssue({
+        code: "custom",
+        path,
+        message:
+          "cost must be null when sessionTotals.currency is null - pricing was unavailable for this audit, so a non-null cost here would be a guess",
+      });
+    };
+
+    rejectIfGuessed(audit.sessionTotals.cost, ["sessionTotals", "cost"]);
+    audit.findings.forEach((finding, index) => {
+      rejectIfGuessed(finding.observedImpact.cost, ["findings", index, "observedImpact", "cost"]);
+      rejectIfGuessed(finding.estimatedSavings.cost, ["findings", index, "estimatedSavings", "cost"]);
+    });
+    audit.proposals.forEach((proposal, index) => {
+      rejectIfGuessed(proposal.expectedSavings.cost, ["proposals", index, "expectedSavings", "cost"]);
+    });
+  });
 
 export type SavingsRange = z.infer<typeof savingsRangeSchema>;
 export type ObservedImpact = z.infer<typeof observedImpactSchema>;

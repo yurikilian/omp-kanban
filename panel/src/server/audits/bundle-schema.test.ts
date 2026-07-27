@@ -123,3 +123,26 @@ describe("report.md and audit.json agree on findings (E4-S4-AC5)", () => {
     expect(comparison.extraInReport).toEqual(["Suspiciously verbose error messages"]);
   });
 });
+
+describe("session totals are stated once, not summed across findings (E4-S4-AC7)", () => {
+  it("session totals stated once are not the arithmetic sum of findings sharing evidence", () => {
+    const raw = readJsonFixture("audit-shared-evidence.json") as { sessionTotals: { inputTokens: number } };
+    const audit = parseAuditReport(raw);
+
+    const findingsSharingEvidence = audit.findings.filter((finding) => finding.evidenceIds.includes("evidence-shared"));
+    expect(findingsSharingEvidence).toHaveLength(2);
+
+    const summedLikely = findingsSharingEvidence.reduce(
+      (sum, finding) => sum + (finding.estimatedSavings.inputTokens?.likely ?? 0),
+      0,
+    );
+
+    // Both findings cite the same shared evidence; naively summing their
+    // savings would double-count it and disagree with the analyzer's own
+    // stated total.
+    expect(summedLikely).not.toBe(audit.sessionTotals.inputTokens);
+    // Parsing preserves exactly what audit.json stated - it never
+    // recomputes or reconciles sessionTotals from the findings array.
+    expect(audit.sessionTotals.inputTokens).toBe(raw.sessionTotals.inputTokens);
+  });
+});

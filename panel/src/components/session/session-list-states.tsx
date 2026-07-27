@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { SessionSummary } from "@/server/sessions/types";
-import { SessionList } from "./session-list";
+import { SessionSearch } from "./session-search";
 
 type SessionListState =
   | { status: "loading" }
@@ -89,5 +89,5 @@ export function SessionListStates() {
     );
   }
 
-  return <SessionList sessions={state.sessions} />;
+  return <SessionSearch sessions={state.sessions} />;
 }

@@ -3,7 +3,13 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { EVIDENCE_EXCERPT_MAX_LENGTH, EvidenceJsonlError, parseAuditReport, parseEvidenceJsonl } from "./bundle-schema";
+import {
+  EVIDENCE_EXCERPT_MAX_LENGTH,
+  EvidenceJsonlError,
+  checkReportMatchesFindings,
+  parseAuditReport,
+  parseEvidenceJsonl,
+} from "./bundle-schema";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.resolve(dirname, "../../../tests/fixtures/audits");
@@ -94,5 +100,26 @@ describe("evidence.jsonl shape (E4-S4-AC4)", () => {
 
     expect(caught).toBeInstanceOf(EvidenceJsonlError);
     expect((caught as EvidenceJsonlError).message).toContain(String(EVIDENCE_EXCERPT_MAX_LENGTH));
+  });
+});
+
+describe("report.md and audit.json agree on findings (E4-S4-AC5)", () => {
+  const priced = () => parseAuditReport(readJsonFixture("audit-valid-priced.json"));
+
+  it("every finding in audit.json appears in report.md and the report states no finding audit.json lacks", () => {
+    const comparison = checkReportMatchesFindings(priced(), readFixture("report-matching.md"));
+    expect(comparison).toEqual({ missingFromReport: [], extraInReport: [] });
+  });
+
+  it("flags a finding present in audit.json but missing from report.md", () => {
+    const comparison = checkReportMatchesFindings(priced(), readFixture("report-missing-finding.md"));
+    expect(comparison.missingFromReport).toEqual(["Mechanical fan-out running on a reasoning-tier model"]);
+    expect(comparison.extraInReport).toEqual([]);
+  });
+
+  it("flags a finding named in report.md that audit.json does not contain", () => {
+    const comparison = checkReportMatchesFindings(priced(), readFixture("report-extra-finding.md"));
+    expect(comparison.missingFromReport).toEqual([]);
+    expect(comparison.extraInReport).toEqual(["Suspiciously verbose error messages"]);
   });
 });

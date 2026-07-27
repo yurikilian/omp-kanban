@@ -200,10 +200,6 @@ export class EvidenceJsonlError extends Error {
   }
 }
 
-function describeIssues(issues: z.core.$ZodIssue[]): string {
-  return issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
-}
-
 /**
  * Parse `evidence.jsonl` content (one JSON object per line, blank lines
  * ignored) into evidence records. Strict, unlike session-transcript
@@ -228,10 +224,57 @@ export function parseEvidenceJsonl(content: string): EvidenceRecord[] {
 
     const result = evidenceRecordSchema.safeParse(parsedJson);
     if (!result.success) {
-      throw new EvidenceJsonlError(lineNumber, describeIssues(result.error.issues));
+      const detail = result.error.issues
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; ");
+      throw new EvidenceJsonlError(lineNumber, detail);
     }
     records.push(result.data);
   });
 
   return records;
+}
+
+/**
+ * Whether `report.md` and `audit.json` from the same audit agree on their
+ * findings (E4-S4-AC5, agents/kb-forensics.md's `report.md` contract):
+ * every finding named in `audit.json` appears in the report, and the
+ * report names no finding `audit.json` does not have.
+ *
+ * Findings are rendered in `report.md` as their own `### <title>`
+ * subsection - using the finding's `title` field verbatim as the heading
+ * text - under the `## Expensive patterns found` section. That convention
+ * is what makes this comparison possible at all; see the same section of
+ * `agents/kb-forensics.md`.
+ */
+export interface ReportFindingsComparison {
+  /** Finding titles present in `audit.json` with no matching subsection in `report.md`. */
+  missingFromReport: string[];
+  /** Subsection headings in `report.md` with no matching finding in `audit.json`. */
+  extraInReport: string[];
+}
+
+const EXPENSIVE_PATTERNS_HEADING = "## Expensive patterns found";
+
+function extractExpensivePatternsSection(reportMarkdown: string): string {
+  const startIndex = reportMarkdown.indexOf(EXPENSIVE_PATTERNS_HEADING);
+  if (startIndex === -1) return "";
+
+  const afterHeading = startIndex + EXPENSIVE_PATTERNS_HEADING.length;
+  const rest = reportMarkdown.slice(afterHeading);
+  // The next level-2 heading closes the section; absent one, it runs to the end.
+  const nextSectionMatch = rest.match(/^##\s+.+$/m);
+  const sectionEnd = nextSectionMatch?.index ?? rest.length;
+  return rest.slice(0, sectionEnd);
+}
+
+export function checkReportMatchesFindings(audit: AuditReport, reportMarkdown: string): ReportFindingsComparison {
+  const section = extractExpensivePatternsSection(reportMarkdown);
+  const reportedTitles = new Set([...section.matchAll(/^###\s+(.+)$/gm)].map((match) => match[1].trim()));
+  const findingTitles = new Set(audit.findings.map((finding) => finding.title));
+
+  return {
+    missingFromReport: [...findingTitles].filter((title) => !reportedTitles.has(title)),
+    extraInReport: [...reportedTitles].filter((title) => !findingTitles.has(title)),
+  };
 }

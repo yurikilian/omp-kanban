@@ -59,6 +59,31 @@ describe("pricing-unavailable values are null, not a guess (E4-S4-AC3)", () => {
 });
 
 describe("evidence.jsonl shape (E4-S4-AC4)", () => {
+  it("every evidence.jsonl line parses as one record with id, session, event, agent, timestamp, type, measurements, explanation, excerpt and source location", () => {
+    const records = parseEvidenceJsonl(readFixture("evidence-valid.jsonl"));
+
+    expect(records).toHaveLength(3);
+    for (const record of records) {
+      expect(record.id).toBeTruthy();
+      expect(record.sessionId).toBeTruthy();
+      expect(record.eventRef).toBeTruthy();
+      expect(record.agentId).toBeTruthy();
+      expect(record.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(record.eventType).toBeTruthy();
+      expect(Object.keys(record.measured).length).toBeGreaterThan(0);
+      expect(record.explanation).toBeTruthy();
+      expect(record.excerpt !== undefined || record.digest !== undefined).toBe(true);
+      expect(record.sourceLocation).toBeTruthy();
+    }
+
+    // The fixture deliberately exercises both branches of the "exactly one
+    // of excerpt/digest" rule, not just one of them.
+    expect(records.some((record) => record.excerpt !== undefined)).toBe(true);
+    expect(records.some((record) => record.digest !== undefined)).toBe(true);
+    // toolName is optional and present only on tool-related records.
+    expect(records.some((record) => record.toolName !== undefined)).toBe(true);
+  });
+
   it("an excerpt exceeding the documented size bound is rejected", () => {
     let caught: unknown;
     try {

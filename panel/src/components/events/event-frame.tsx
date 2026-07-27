@@ -75,7 +75,11 @@ export function EventFrame({ icon, label, timestamp, agent, duration, status, ch
           <time className="ml-auto shrink-0 text-xs text-muted-foreground" dateTime={timestamp}>
             {formatTimestamp(timestamp)}
           </time>
-          {duration && <span className="shrink-0 text-xs text-muted-foreground">{duration}</span>}
+          {duration && (
+            <span data-slot="event-duration" className="shrink-0 text-xs text-muted-foreground">
+              {duration}
+            </span>
+          )}
         </div>
         {children && (
           <div data-slot="event-content" className="mt-1 min-w-0">

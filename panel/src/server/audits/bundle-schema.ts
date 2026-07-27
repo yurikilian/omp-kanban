@@ -1,17 +1,17 @@
 import { z } from "zod";
 
 /**
- * Runtime schema for two of the four files in a panel-dispatched audit
- * bundle (`agents/kb-forensics.md`, `panel/docs/audit-bundle.md`):
+ * Runtime schema for the three files in a panel-dispatched audit bundle
+ * that carry structured content (`agents/kb-forensics.md`,
+ * `panel/docs/audit-bundle.md`): `manifest.json` (an `AuditManifest`),
  * `audit.json` (an `AuditReport`) and `evidence.jsonl` (one `EvidenceRecord`
  * per line). `kb-forensics` is prompt-driven, so nothing about a bundle is
  * guaranteed by construction - the panel must validate every bundle as
- * untrusted input, and this module is that validator.
- *
- * `manifest.json`'s shape is fully documented in both files above but has
- * no reader here yet - nothing in this cycle consumes it. Add it when a
- * task that reads a bundle off disk actually needs it, instead of ahead of
- * that need.
+ * untrusted input, and this module is that validator. `./validate.ts`
+ * builds on these schemas to decide a whole bundle directory's state
+ * (conforming, invalid, an unsupported schema version, or still being
+ * written) - see it for how "which file, which field or line" gets
+ * reported for a bundle that fails to validate.
  */
 
 const lowMediumHigh = z.enum(["low", "medium", "high"]);
@@ -278,3 +278,79 @@ export function checkReportMatchesFindings(audit: AuditReport, reportMarkdown: s
     extraInReport: [...reportedTitles].filter((title) => !findingTitles.has(title)),
   };
 }
+
+/**
+ * `manifest.json`'s documented shape (`panel/docs/audit-bundle.md`) - the
+ * file a reader opens first to decide what state a bundle is in before it
+ * trusts anything else inside it. `status` holds only the three terminal
+ * values `kb-forensics` itself ever writes; `queued`, `running` and
+ * `cancelled` live solely in the job service's own job record and never
+ * appear in a bundle on disk (`panel/docs/audit-bundle.md`, "Status
+ * values") - there is nothing here to validate for them.
+ */
+const auditManifestStatusSchema = z.enum(["completed", "insufficient_signal", "failed"]);
+
+const auditManifestArtifactsSchema = z.object({
+  // Fixed names, not merely conventional ones - restated here as literals
+  // because the contract calls them fixed (panel/docs/audit-bundle.md,
+  // "The four files").
+  manifest: z.literal("manifest.json"),
+  audit: z.literal("audit.json"),
+  report: z.literal("report.md"),
+  evidence: z.literal("evidence.jsonl"),
+});
+
+export const auditManifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    auditId: z.string().min(1),
+    status: auditManifestStatusSchema,
+    target: z.object({
+      sessionId: z.string().min(1),
+      // Omitted when the transcript is not grouped under one project.
+      project: z.string().min(1).optional(),
+      transcriptPath: z.string().min(1),
+    }),
+    fingerprint: z.string().min(1),
+    analyzer: z.object({
+      name: z.literal("kb-forensics"),
+      version: z.string().min(1),
+    }),
+    createdAt: z.iso.datetime(),
+    startedAt: z.iso.datetime(),
+    completedAt: z.iso.datetime(),
+    artifacts: auditManifestArtifactsSchema,
+    // Present only when status is "failed" - enforced below, not by
+    // optionality alone, so a failed manifest cannot omit the explanation
+    // and a non-failed one cannot carry a stray leftover from a failure
+    // that did not happen.
+    failureSummary: z.string().min(1).optional(),
+  })
+  .superRefine((manifest, ctx) => {
+    const hasFailureSummary = manifest.failureSummary !== undefined;
+    if (manifest.status === "failed" && !hasFailureSummary) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["failureSummary"],
+        message: 'failureSummary is required when status is "failed"',
+      });
+    }
+    if (manifest.status !== "failed" && hasFailureSummary) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["failureSummary"],
+        message: 'failureSummary must be absent unless status is "failed"',
+      });
+    }
+  });
+
+export type AuditManifest = z.infer<typeof auditManifestSchema>;
+
+/**
+ * Schema versions this build of the panel knows how to read. A version
+ * outside this set is unsupported rather than invalid - see
+ * `./validate.ts`, which reports that distinctly and does not attempt to
+ * run an unsupported version's manifest through this schema at all
+ * (E4-S5-AC3).
+ */
+export const SUPPORTED_AUDIT_SCHEMA_VERSIONS: readonly number[] = [1];

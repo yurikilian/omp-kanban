@@ -1,0 +1,3 @@
+A plain file that happens to live next to the bundle directories.
+indexAuditBundles must skip non-directory entries under the audits root
+without crashing (E4-S5-AC1).

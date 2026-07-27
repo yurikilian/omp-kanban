@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-bad-evidence-line",
+  "coverageGaps": [],
+  "sessionTotals": { "inputTokens": 7000, "outputTokens": 300, "cost": null, "currency": null },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "large_tool_result",
+      "title": "Duplicate config read across two agents",
+      "severity": "low",
+      "confidence": "medium",
+      "summary": "Two agents each read the same configuration file in full.",
+      "observedImpact": { "inputTokens": 2200, "outputTokens": 0, "cost": null },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 900, "likely": 1100, "maximum": 1300 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-1", "evidence-2"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": []
+    }
+  ],
+  "proposals": [],
+  "methodology": "Token counts read directly from the transcript's recorded usage objects."
+}

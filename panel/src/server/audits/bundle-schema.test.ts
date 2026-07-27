@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import {
   EVIDENCE_EXCERPT_MAX_LENGTH,
   EvidenceJsonlError,
+  auditReportSchema,
   checkReportMatchesFindings,
+  evidenceRecordSchema,
   parseAuditReport,
   parseEvidenceJsonl,
 } from "./bundle-schema";
@@ -101,6 +103,25 @@ describe("evidence.jsonl shape (E4-S4-AC4)", () => {
     expect(caught).toBeInstanceOf(EvidenceJsonlError);
     expect((caught as EvidenceJsonlError).message).toContain(String(EVIDENCE_EXCERPT_MAX_LENGTH));
   });
+
+  it("rejects a record carrying both excerpt and digest, and a record carrying neither", () => {
+    const base = {
+      id: "evidence-x",
+      sessionId: "2026-07-20T18-42-01-abcd1234",
+      eventRef: "msg_0001#tool_call_1",
+      agentId: "main",
+      timestamp: "2026-07-20T18:43:12Z",
+      eventType: "tool_result",
+      measured: { inputTokens: 1 },
+      explanation: "why this backs the finding",
+      sourceLocation: "some/file.jsonl:1",
+    };
+
+    expect(evidenceRecordSchema.safeParse({ ...base, excerpt: "short excerpt", digest: "sha256:abc" }).success).toBe(
+      false,
+    );
+    expect(evidenceRecordSchema.safeParse(base).success).toBe(false);
+  });
 });
 
 describe("report.md and audit.json agree on findings (E4-S4-AC5)", () => {
@@ -144,5 +165,33 @@ describe("session totals are stated once, not summed across findings (E4-S4-AC7)
     // Parsing preserves exactly what audit.json stated - it never
     // recomputes or reconciles sessionTotals from the findings array.
     expect(audit.sessionTotals.inputTokens).toBe(raw.sessionTotals.inputTokens);
+  });
+});
+
+describe("a proposal never claims automatic application (E4-S4-AC3)", () => {
+  it("rejects a proposal with automaticApplicationAllowed: true", () => {
+    const raw = readJsonFixture("audit-valid-priced.json") as { proposals: Array<Record<string, unknown>> };
+    raw.proposals[0] = { ...raw.proposals[0], automaticApplicationAllowed: true };
+
+    // Nothing in the panel applies a proposal, ever - the schema holds that
+    // as fact rather than letting a bundle merely claim it.
+    expect(auditReportSchema.safeParse(raw).success).toBe(false);
+  });
+});
+
+describe("a savings range must satisfy minimum <= likely <= maximum (E4-S4-AC3)", () => {
+  it("rejects a savings range whose minimum exceeds its maximum", () => {
+    const raw = readJsonFixture("audit-valid-priced.json") as {
+      findings: Array<{ estimatedSavings: Record<string, unknown> }>;
+    };
+    raw.findings[0] = {
+      ...raw.findings[0],
+      estimatedSavings: {
+        ...raw.findings[0].estimatedSavings,
+        inputTokens: { minimum: 90000, likely: 61000, maximum: 76000 },
+      },
+    };
+
+    expect(auditReportSchema.safeParse(raw).success).toBe(false);
   });
 });

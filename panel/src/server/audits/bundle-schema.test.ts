@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseAuditReport } from "./bundle-schema";
+import { EVIDENCE_EXCERPT_MAX_LENGTH, EvidenceJsonlError, parseAuditReport, parseEvidenceJsonl } from "./bundle-schema";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.resolve(dirname, "../../../tests/fixtures/audits");
@@ -55,5 +55,19 @@ describe("pricing-unavailable values are null, not a guess (E4-S4-AC3)", () => {
     // sessionTotals.currency is null (no pricing source), so a non-null cost
     // anywhere in the document is a guess the schema refuses to accept.
     expect(() => parseAuditReport(readJsonFixture("audit-invalid-guessed-cost.json"))).toThrow();
+  });
+});
+
+describe("evidence.jsonl shape (E4-S4-AC4)", () => {
+  it("an excerpt exceeding the documented size bound is rejected", () => {
+    let caught: unknown;
+    try {
+      parseEvidenceJsonl(readFixture("evidence-excerpt-too-long.jsonl"));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(EvidenceJsonlError);
+    expect((caught as EvidenceJsonlError).message).toContain(String(EVIDENCE_EXCERPT_MAX_LENGTH));
   });
 });

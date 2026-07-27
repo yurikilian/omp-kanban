@@ -145,3 +145,93 @@ export type AuditReport = z.infer<typeof auditReportSchema>;
 export function parseAuditReport(input: unknown): AuditReport {
   return auditReportSchema.parse(input);
 }
+
+/**
+ * Never copy an entire large tool result into `excerpt` - past this bound,
+ * summarize into `explanation` and cite `digest` instead
+ * (panel/docs/audit-bundle.md, agents/kb-forensics.md). Chosen to match the
+ * `head -c 2000` this same agent already uses to sample a transcript during
+ * schema discovery, so one bound governs both.
+ */
+export const EVIDENCE_EXCERPT_MAX_LENGTH = 2000;
+
+export const evidenceRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    sessionId: z.string().min(1),
+    eventRef: z.string().min(1),
+    agentId: z.string().min(1),
+    timestamp: z.iso.datetime(),
+    eventType: z.string().min(1),
+    // Present only when eventType is tool-related; omitted otherwise.
+    toolName: z.string().min(1).optional(),
+    measured: z
+      .record(z.string(), z.number())
+      .refine((measured) => Object.keys(measured).length > 0, {
+        message: "measured must back at least one numeric value - a record measuring nothing has no reason to exist",
+      }),
+    explanation: z.string().min(1),
+    excerpt: z.string().max(EVIDENCE_EXCERPT_MAX_LENGTH).optional(),
+    digest: z.string().min(1).optional(),
+    sourceLocation: z.string().min(1),
+  })
+  .superRefine((record, ctx) => {
+    const hasExcerpt = record.excerpt !== undefined;
+    const hasDigest = record.digest !== undefined;
+    if (hasExcerpt === hasDigest) {
+      ctx.addIssue({
+        code: "custom",
+        path: [hasExcerpt ? "digest" : "excerpt"],
+        message: "exactly one of excerpt or digest must be present - never both, never neither",
+      });
+    }
+  });
+
+export type EvidenceRecord = z.infer<typeof evidenceRecordSchema>;
+
+/** Raised by `parseEvidenceJsonl` naming the 1-based line that failed, so a caller can point at the exact bad record. */
+export class EvidenceJsonlError extends Error {
+  constructor(
+    public readonly lineNumber: number,
+    detail: string,
+  ) {
+    super(`evidence.jsonl line ${lineNumber}: ${detail}`);
+    this.name = "EvidenceJsonlError";
+  }
+}
+
+function describeIssues(issues: z.core.$ZodIssue[]): string {
+  return issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
+}
+
+/**
+ * Parse `evidence.jsonl` content (one JSON object per line, blank lines
+ * ignored) into evidence records. Strict, unlike session-transcript
+ * parsing: this file is written once by a finished analyzer run rather than
+ * tailed live, so every non-blank line must parse and validate - the first
+ * line that does not throws rather than being silently dropped.
+ */
+export function parseEvidenceJsonl(content: string): EvidenceRecord[] {
+  const records: EvidenceRecord[] = [];
+
+  content.split("\n").forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    if (!trimmed) return;
+
+    const lineNumber = index + 1;
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(trimmed);
+    } catch {
+      throw new EvidenceJsonlError(lineNumber, "line is not valid JSON");
+    }
+
+    const result = evidenceRecordSchema.safeParse(parsedJson);
+    if (!result.success) {
+      throw new EvidenceJsonlError(lineNumber, describeIssues(result.error.issues));
+    }
+    records.push(result.data);
+  });
+
+  return records;
+}

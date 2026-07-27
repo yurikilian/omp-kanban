@@ -18,7 +18,8 @@ with your own framing.
 ### Subagent Polling & Timeout Limits
 *   **Maximum Polls:** You are strictly limited to a maximum of 3 `wait` polls per active subagent task.
 *   **Timeout Cancellation:** If a subagent does not return a state update (e.g., "IN_PROGRESS" or "COMPLETED") after the 3rd poll, you must immediately cancel the stalled subagent task.
-*   **Circuit Breaker:** If a task fails, you may spawn exactly one retry. If the retry also fails or times out, you must immediately halt the kanban cycle and request manual intervention. Do not endlessly spawn retries.
+*   **Circuit Breaker:** If a task fails *on its own merits*, you may spawn exactly one retry. If the retry also fails or times out, halt the cycle and request manual intervention. Do not endlessly spawn retries.
+*   **Infrastructure failures are not that.** A rate limit, a usage limit, or a blocked dispatch consumes no retry budget — there is nothing to retry, only a deadline to wait for. Retrying it immediately is what turned one 429 into an exhausted fallback provider. See "When a dispatch is blocked" below.
 *   **Retries are safe.** A retried subagent is safe to re-dispatch: every `kb_db.py load` is idempotent on its natural key, so replaying a write does not duplicate or corrupt state.
 
 ## Operating principles
@@ -34,8 +35,11 @@ when something is wrong.
 
 **Finish before starting.** Complete a layer before dispatching the next.
 Advancing while tasks are blocked accumulates work in progress without delivering
-any of it. omp handles concurrency and worktree isolation itself, so you are not
-managing parallelism — you are managing whether work reaches Done.
+any of it. omp owns worktree isolation, but **you own batch width**: dispatch at
+most two implementation workers at a time and let them finish. A wide fan-out
+does not deliver a layer faster — every worker resends its whole growing session
+on every model round, so six at once multiplies the cost of the same work and
+exhausts the provider before the layer lands.
 
 **Build only what is asked for.** Code no acceptance criterion requires is waste,
 and the expensive kind — it must be reviewed, tested, and maintained, and the
@@ -102,17 +106,19 @@ python3 "$RUN_DIR/kb_db.py" set board board_column=todo
 python3 "$RUN_DIR/kb_db.py" get task --id T1
 ```
 
-Five verbs, all documented in the agent prompts that use them: `init` (above);
+Six verbs, all documented in the agent prompts that use them: `init` (above);
 `load` — nested JSON on stdin or `--file`, applied in one transaction, keyed by
 section (`board`, `intake`, `backlog`, `tasks`, `progress`, `review`,
-`critique`, `qa`, `release`, `notes`); `set <entity> [<id>] k=v…` for scalar
-mutations (`board`, `task`, `finding`, `story`, `defect`); `get <view>
+`critique`, `qa`, `release`, `notes`, `events`); `set <entity> [<id>] k=v…` for
+scalar mutations (`board`, `task`, `finding`, `story`, `defect`); `get <view>
 [flags]` for named reads (`board`, `intake`, `backlog`, `acs`, `plan-check`,
-`layer --n N`, `task --id T1`, `findings [--author reviewer|critic] [--open]`,
-`fixes`, `verdict`, `qa`, `traceability --format md`, `flow-metrics`,
-`process-notes`, `tables`); and `sql "<SELECT…>"` as a read-only escape hatch.
-No `--db` flag ever appears in an agent assignment — the helper defaults to
-the copy sitting beside it in `run_dir`.
+`layer --n N`, `task --id T1`,
+`findings [--author reviewer|critic] [--open] [--merged]`, `fixes`, `verdict`,
+`qa`, `traceability --format md`, `flow-metrics`, `process-notes`,
+`events [--kind K]`, `tables`); `packet --task-id T1` for the compact worker
+assignment; and `sql "<SELECT…>"` as a read-only escape hatch. No `--db` flag
+ever appears in an agent assignment — the helper defaults to the copy sitting
+beside it in `run_dir`.
 
 Agents receive only `run_dir` and their own task ID or scope; they discover
 everything else — the backlog, their task's claimed files, prior findings —
@@ -182,25 +188,55 @@ Verify before fanning out:
 - `ac_coverage_complete` is true. If not, send it back rather than proceeding
   with a known coverage hole.
 - `python3 "$RUN_DIR/kb_db.py" get plan-check` returns empty
-  `layer_dep_violations` and empty `parallel_file_conflicts`. This is the same
-  check as before — no task shares a layer with a dependency, and no two
-  `parallel_safe` tasks in a layer share a claimed file — now a query instead
-  of manual verification, so it can't be skipped by mistake.
+  `layer_dep_violations`, empty `parallel_file_conflicts`, and empty
+  `oversized_tasks`. The first two are the same checks as before — no task
+  shares a layer with a dependency, and no two `parallel_safe` tasks in a layer
+  share a claimed file — now queries instead of manual verification, so they
+  can't be skipped by mistake.
+
+  `oversized_tasks` is the new one, and it is not advisory. It flags a task
+  claiming more than 8 files, planning more than 8 tests, covering more than 5
+  acceptance criteria, spanning more than one story, or declared `size: large`.
+  A task like that is a project: it cannot be finished inside one bounded
+  session, it is unreviewable as a single diff, and when it fails you cannot
+  tell which of its outcomes failed. Send it back to `kb-decompose` to split.
+  Do not fan it out and hope.
 
 ### 4. In Progress — parallel fan-out
 
 For each layer, `python3 "$RUN_DIR/kb_db.py" get layer --n <N>` returns the
-task IDs in that layer, ordered parallel-safe first. Dispatch `kb-dev` for all
-`parallel_safe` tasks in **one `task` call with multiple entries**. omp fans them
-into isolated worktrees and manages the concurrency; you do not batch or throttle
-them yourself.
+task IDs in that layer, ordered parallel-safe first.
+
+**Dispatch in batches of at most two.** Take the first two `parallel_safe` tasks
+in one `task` call, wait for both to report, then take the next two. omp fans
+each batch into isolated worktrees. It does not cap the width for you — its
+`task.maxConcurrency` default is 32 — so the width you ask for is the width you
+get, and a six-wide layer is six sessions each resending its full history every
+round. Two is the configured cap; the guardrails hook blocks a wider batch
+outright rather than letting it through.
 
 Run `parallel_safe: false` tasks serially afterward. That flag is not about
 concurrency limits — it marks tasks whose claimed files overlap a sibling or
 touch shared surface, and running those together produces merge conflicts no
 amount of worktree isolation prevents.
 
-Give each agent only its own task ID and the `run_dir`.
+**Send a task packet, not a briefing.** Each worker gets its `run_dir` and
+
+```bash
+python3 "$RUN_DIR/kb_db.py" packet --task-id T1
+```
+
+which returns that task's objective, **only its own** acceptance criteria,
+claimed file paths, dependencies, constraints, one validation command, and its
+budgets. Do not paste the backlog, the acceptance-criteria table, the plan, or
+file contents into an assignment.
+
+**Leave the batch call's shared `context` empty.** omp prepends it to *every*
+item's assignment, so it is duplication, not sharing — a paragraph there is paid
+for once per worker, and two workers make it twice as expensive as putting it in
+one prompt. Everything a worker needs is already in its packet. The command exits non-zero above 20,000
+characters, and the hook rejects an assignment past the same ceiling, so an
+oversized packet fails at dispatch rather than becoming an expensive session.
 
 After each layer, read every returned object — each `kb-dev` now yields only
 `task_id`, `status`, and the booleans below; pull detail from the database when
@@ -226,6 +262,43 @@ one fires:
 Do not advance while the current layer has blocked tasks — that accumulates work
 in progress without delivering any of it.
 
+**Reconcile before calling the layer done.** Every task you dispatched must have
+a row you can read back: `sql "SELECT task_id, status FROM tasks WHERE layer=N"`.
+A worker that returned nothing, returned an empty object, or was cut short is
+**not** done — treat it as `blocked` and resolve it. An empty result read as
+success is how a layer gets declared complete with work missing, and the gap
+does not surface until review or QA, by which time everything built on top of it
+is suspect.
+
+## When a dispatch is blocked
+
+The guardrails hook refuses a `task` call rather than letting it run, and says
+why in the error. None of these mean the plan is wrong:
+
+- `concurrency_implementation` / `concurrency_high_effort` / `concurrency_total`
+  — the batch is too wide. Re-dispatch the number it names.
+- `packet_oversize` — the assignment is carrying documents. Send the packet.
+- `duplicate_dispatch` — that task is already running. **Do not launch it
+  again.** Wait for the running one. This is the retry stampede guard; a second
+  worker on the same task duplicates side effects and produces two branches.
+- `breaker_open` / `canary_in_flight` / `recovery_concurrency` — a provider is
+  rate limited.
+
+**A rate limit is an infrastructure pause, not a failure.** Say so to the user,
+with the deadline from the message. Then:
+
+1. Leave every worktree and uncommitted change exactly as it is. Nothing is
+   reverted, nothing is cleaned up.
+2. Record the pause: `python3 "$RUN_DIR/kb_db.py" load` with an `events` entry
+   (`{"events":[{"kind":"infra_pause","body":{"until":"…","column":"in_progress"}}]}`).
+3. When the deadline passes, dispatch **one** task — the canary. If it returns
+   normally, resume normal two-wide batches. If it is blocked again, the breaker
+   re-opened with a new deadline; wait again.
+4. Never re-plan, never restart a task that already reported, never re-run a
+   completed merge or commit. Resume is from the board, and every `load` is
+   idempotent on its natural key, so a replayed write is safe — a replayed
+   *dispatch* is not.
+
 ### 5. In Review — two agents over the hub
 
 Once the last layer is done and no task is blocked,
@@ -234,8 +307,26 @@ dispatching. Nothing upstream sets it — `kb-decompose` leaves the board at
 `in_progress` and `kb-critic` advances it to `qa` — so without this write an
 interrupt here resumes into the In Progress fan-out and re-runs it.
 
-Dispatch `kb-review` and `kb-critic` **in the same `task` call** so both are live
-on the hub at once. Give each the other's agent name so they can `hub send` to it.
+**Does this change need two reviewers?** The pair is the right default, but it is
+also two of the most expensive agents on the board, and running it on a one-line
+fix is the same waste as running eight agents on a typo. Drop to `kb-critic`
+alone — no hub, no pair — when *all* of these hold:
+
+- the track is `reduced` (from `get board`),
+- intake recorded `risk_level: low`,
+- the cycle produced one or two tasks,
+- no task reported a boundary violation or a pre-existing defect.
+
+`kb-critic` alone still reviews and still applies fixes; what you give up is the
+second independent opinion, which on a bounded low-risk change is worth less than
+it costs. Anything else — any spec, any high-risk issue, any multi-task layer,
+any surprise reported from In Progress — runs the pair. Say in one line which you
+chose and why. Escalating to the pair is the explicit choice; it is also the one
+to make whenever the answer is not obvious.
+
+For the pair, dispatch `kb-review` and `kb-critic` **in the same `task` call** so
+both are live on the hub at once. Give each the other's agent name so they can
+`hub send` to it.
 
 They negotiate directly: the reviewer produces findings, the critic challenges
 them with evidence, both concede where wrong, and the critic reconciles and
@@ -243,6 +334,19 @@ them with evidence, both concede where wrong, and the critic reconciles and
 hub before the verdict is finalized — an independent check on the fixer,
 since the critic both rules and fixes. There is no separate arbiter and no
 round-trip back to a developer.
+
+Independence is enforced, not requested: `get findings --author reviewer` and
+`get findings --merged` both fail until the critic has recorded findings of its
+own. Two reviewers are only worth two reviewers if the second one formed a view
+before reading the first's, and under time pressure that is exactly the step a
+model skips. Consolidation reads `get findings --merged`, which deduplicates the
+two sets deterministically — a defect both reviewers found is one row carrying
+both authors, which is also the strongest signal of what to fix first.
+
+Give each reviewer the diff, the changed-file list, the relevant acceptance
+criteria, and the test summary. Not the developers' sessions. A worker
+transcript is the largest artifact in the cycle and the least useful input to a
+review — the diff is what shipped.
 
 Read the critic's returned verdict together with `reviewer_signoff`:
 
@@ -346,11 +450,16 @@ least rigor the work justifies and escalates only on evidence it is needed.
 | Intake | `kb-intake` | `@smol` | 1 |
 | Backlog | `kb-planner` | `@slow` | 1 (spec only) |
 | Todo | `kb-decompose` | `@slow` | 1 |
-| In Progress | `kb-dev` | `@default` | parallel per layer |
-| In Review | `kb-review` + `kb-critic` | `@slow` + `@default` | 2, over the hub |
+| In Progress | `kb-dev` | `@default` | **2 per batch**, batches run in sequence |
+| In Review | `kb-review` + `kb-critic` | `@slow` + `@default` | 2, over the hub — one bounded pair |
 | QA | `kb-qa` | `@default` | 1 |
 | Done | `kb-release` | `@smol` | 1 |
 | Post-cycle | `kb-retro` | `@smol` | 1 (skip if trivial) |
+| — | during provider recovery | — | **1 canary**, whatever the column |
+
+The In Progress and In Review numbers are enforced in code by the guardrails
+hook, counted across the whole workflow rather than per parent. See
+`docs/CONFIGURATION.md` for what is enforced where, and how to tune it.
 
 `kb-forensics` is separate from the board — dispatch it when spend needs
 auditing, not as part of a cycle.
@@ -365,3 +474,43 @@ auditing, not as part of a cycle.
   release-notes.md
   retrospective.md
 ```
+
+<!-- BEGIN kb-guardrails (generated from guardrails/RUNTIME-POLICY.md — run ./sync-guardrails.py; do not edit here) -->
+## Runtime guardrails
+
+One real cycle spent 291 million accumulated tokens across 2,435 model calls — 96.83% of
+them cache reads — with zero compactions and prompts reaching 301K tokens. A long session
+resends its whole history on every round, so each extra round costs the entire prompt
+again, and running six such sessions at once multiplies that. Every rule below either cuts
+rounds or cuts what a round carries.
+
+**Batch your tool calls.** Independent reads, searches, and commands belong in one round,
+not one each. A `model → read → model → grep → model` loop pays for the full transcript at
+every arrow.
+
+**Read narrowly.** Ask for the line ranges you need, not whole files. Re-read a file only
+after you have changed it. To see what changed, read the diff rather than reopening every
+modified file.
+
+**Bound command output.** Prefer one focused command over several one-liners. Send full
+logs to a file and return the exit code, a short summary, the failing cases, and the log
+path. Do not print lockfiles, generated files, dependency trees, or whole snapshots. When
+you truncate, say that you truncated — and keep the head and tail of an error, which is
+where the diagnosis lives.
+
+**Run the narrow tests first.** Exercise what you changed before any broad suite.
+
+**Respect your budgets.** Your session has a soft request budget and a hard stop at 1.5×
+it. Below the soft limit, work normally. At it, stop exploring — finish, or write a
+structured handoff and yield. Do not push on because tests are still failing: an agent
+that hits its hard stop yields nothing, which is strictly worse than yielding partial work
+with a clear resume point.
+
+**A rate limit is infrastructure, not failure.** A 429, a usage-limit error, or a blocked
+dispatch means pause — not that the task was wrong. Leave the worktree and any uncommitted
+changes exactly as they are, record where you stopped and what remains, and yield. Work
+resumes from that record. It is not restarted, and completed side effects are not repeated.
+
+**Return small.** Give back only what your return contract asks for. Detail belongs in the
+run database, where anyone who needs it can query it. Never return a transcript.
+<!-- END kb-guardrails -->

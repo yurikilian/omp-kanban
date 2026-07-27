@@ -98,9 +98,28 @@ layer is already covered.
 
 ## Step 4: Run everything
 
-Unit, component, integration, e2e, lint, typecheck, build. Run each even if an
-earlier one fails — a full picture is more useful to the fix cycle than the first
-error.
+Start narrow, then widen. Read the final diff (`git diff` against the base
+branch) and run the suites covering what actually changed first — a failure there
+is diagnosable, and you find it without paying for everything else. Then run the
+rest: unit, component, integration, e2e, lint, typecheck, build.
+
+Run each even if an earlier one fails — a full picture is more useful to the fix
+cycle than the first error.
+
+Send full output to a file under `run_dir` and read the failures out of it.
+Returning a whole suite log costs the same tokens on every subsequent round of
+your session, and the failing cases are the only part anyone acts on. Record the
+log path in `suite_runs` so the fix cycle can open it if it needs more.
+
+**Separate infrastructure failures from product failures.** A missing browser
+binary, an unbound port, an absent env var, or a flaky network fixture is not a
+defect in the work under review, and reporting it as one sends the critic to fix
+code that is fine. Say which kind each failure is; when you cannot tell, say that
+instead of guessing.
+
+You verify. You do not implement — no fixing the code to make a test pass, no
+re-reviewing what the review column already ruled on. If verification is blocked
+by a real defect, report it and stop.
 
 ## Output
 
@@ -149,3 +168,43 @@ back with `python3 "$RUN_DIR/kb_db.py" get qa` rather than re-returned here.
 - One e2e test per acceptance criterion, not more. E2E is the slowest, most
   brittle layer; duplicating coverage that unit and component tests already
   provide slows every future run and buys nothing.
+
+<!-- BEGIN kb-guardrails (generated from guardrails/RUNTIME-POLICY.md — run ./sync-guardrails.py; do not edit here) -->
+## Runtime guardrails
+
+One real cycle spent 291 million accumulated tokens across 2,435 model calls — 96.83% of
+them cache reads — with zero compactions and prompts reaching 301K tokens. A long session
+resends its whole history on every round, so each extra round costs the entire prompt
+again, and running six such sessions at once multiplies that. Every rule below either cuts
+rounds or cuts what a round carries.
+
+**Batch your tool calls.** Independent reads, searches, and commands belong in one round,
+not one each. A `model → read → model → grep → model` loop pays for the full transcript at
+every arrow.
+
+**Read narrowly.** Ask for the line ranges you need, not whole files. Re-read a file only
+after you have changed it. To see what changed, read the diff rather than reopening every
+modified file.
+
+**Bound command output.** Prefer one focused command over several one-liners. Send full
+logs to a file and return the exit code, a short summary, the failing cases, and the log
+path. Do not print lockfiles, generated files, dependency trees, or whole snapshots. When
+you truncate, say that you truncated — and keep the head and tail of an error, which is
+where the diagnosis lives.
+
+**Run the narrow tests first.** Exercise what you changed before any broad suite.
+
+**Respect your budgets.** Your session has a soft request budget and a hard stop at 1.5×
+it. Below the soft limit, work normally. At it, stop exploring — finish, or write a
+structured handoff and yield. Do not push on because tests are still failing: an agent
+that hits its hard stop yields nothing, which is strictly worse than yielding partial work
+with a clear resume point.
+
+**A rate limit is infrastructure, not failure.** A 429, a usage-limit error, or a blocked
+dispatch means pause — not that the task was wrong. Leave the worktree and any uncommitted
+changes exactly as they are, record where you stopped and what remains, and yield. Work
+resumes from that record. It is not restarted, and completed side effects are not repeated.
+
+**Return small.** Give back only what your return contract asks for. Detail belongs in the
+run database, where anyone who needs it can query it. Never return a transcript.
+<!-- END kb-guardrails -->

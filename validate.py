@@ -31,13 +31,27 @@ DASHBOARD = ROOT / "dashboard"
 BUNDLED = {"explore", "plan", "designer", "reviewer", "librarian",
            "oracle", "task", "quick_task", "scout", "sonic"}
 FIELDS = {"name", "description", "tools", "model", "spawns", "thinkingLevel",
-          "output", "blocking", "autoloadSkills", "read-summarize"}
+          "output", "blocking", "autoloadSkills", "read-summarize", "prewalk"}
+# `prewalk: true` hands the agent off to the "@smol" role at its first
+# edit/write; a string names the target model or role instead. omp resolves it
+# alongside the task.agentPrewalk override, so both forms are valid here.
+PREWALK_DEFAULT_TARGET = True
 # Roles are referenced with an "@" sigil in the model field and given as a list.
 ROLES = {"@smol", "@default", "@slow", "@fast", "@task", "@designer"}
 THINKING = {"minimal", "low", "medium", "high", "xhigh", "auto"}
 # Tool names omp actually exposes (verified from exported agents + session logs).
 TOOLS = {"read", "write", "edit", "grep", "glob", "bash", "lsp", "web_search",
          "ast_grep", "yield", "hub", "todo", "task", "advise", "web"}
+
+# Hook events omp actually dispatches, read out of the installed binary's
+# HookRunner (emit / emitToolCall / emitContext / emitBeforeAgentStart).
+# `tool_call` is the only one whose return value can block a tool; `tool_result`
+# and `context` can rewrite what the model sees; the rest are observational.
+HOOK_EVENTS = {"session_start", "session_end", "agent_start", "agent_end",
+               "turn_start", "turn_end", "context", "tool_call", "tool_result",
+               "before_agent_start", "session.compacting",
+               "session_before_switch", "session_before_branch",
+               "session_before_compact", "session_before_tree"}
 
 # Names the kb-* dispatch-reference regex must never flag as a missing agent,
 # even though they look like one — belt-and-braces alongside kb_db.py's
@@ -114,6 +128,15 @@ def check_agent(path):
 
     if "thinkingLevel" in fm and fm["thinkingLevel"] not in THINKING:
         errors.append(f"{path.name}: invalid thinkingLevel '{fm['thinkingLevel']}'")
+
+    # prewalk is `true` (hand off to the "@smol" role) or a model/role string.
+    # A bare `false` is legal but pointless — it is the default.
+    if "prewalk" in fm:
+        pw = fm["prewalk"]
+        if not isinstance(pw, bool) and not (isinstance(pw, str) and pw.strip()):
+            errors.append(
+                f"{path.name}: prewalk must be true/false or a non-empty "
+                f"model-or-role string, got {pw!r}")
 
     # output conflicts with prose return instructions — omp docs say pick one
     if "output" in fm:
@@ -220,6 +243,26 @@ def check_helper():
                        f"{(proc.stderr or proc.stdout).strip()}")
 
 
+def check_guardrails():
+    """The shared runtime guardrails have one source; every copy must match it.
+
+    Same principle as piping `load` examples through the real helper: a stale
+    copy of a prompt rule is invisible until a live run behaves oddly, so it
+    fails here instead.
+    """
+    sync = ROOT / "sync-guardrails.py"
+    if not sync.exists():
+        errors.append("sync-guardrails.py: missing — required to keep the shared "
+                       "runtime guardrails in one place")
+        return
+    proc = subprocess.run([sys.executable, str(sync), "--check"],
+                          capture_output=True, text=True, timeout=30)
+    if proc.returncode != 0:
+        for line in (proc.stdout or proc.stderr).strip().splitlines():
+            if line.strip():
+                errors.append(f"guardrails: {line.strip()}")
+
+
 def check_manifest():
     """Validate package.json against omp's plugin manifest expectations."""
     path = ROOT / "package.json"
@@ -279,12 +322,24 @@ def check_hooks():
     if not HOOKS.is_dir():
         return []
     found = sorted(HOOKS.glob("*/*.ts"))
+    rows = []
     for path in found:
-        if "export default" not in path.read_text():
+        text = path.read_text()
+        if "export default" not in text:
             warnings.append(
                 f"{path.relative_to(ROOT)}: hook has no `export default` — omp "
                 f"loads hook modules by their default export, so this won't bind")
-    return [str(p.relative_to(ROOT)) for p in found]
+        # omp's real hook surfaces. Binding to an invented event loads without
+        # error and then never fires, so an unknown name is a silent no-op.
+        subscribed = sorted(set(re.findall(r'pi\.on\(\s*"([a-z_.]+)"', text)))
+        for event in subscribed:
+            if event not in HOOK_EVENTS:
+                errors.append(
+                    f"{path.relative_to(ROOT)}: subscribes to '{event}', which is "
+                    f"not an omp hook event ({', '.join(sorted(HOOK_EVENTS))}) — it "
+                    f"would load without error and never fire")
+        rows.append((str(path.relative_to(ROOT)), ",".join(subscribed) or "none"))
+    return rows
 
 
 def check_dashboard():
@@ -349,14 +404,15 @@ def main():
     hooks = check_hooks()
     check_dashboard()
     check_helper()
+    check_guardrails()
 
     if not quiet:
-        w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h in hooks]) + 2
+        w0 = max([16] + [len(n) for n, _, _ in rows] + [len(h) for h, _ in hooks]) + 2
         print(f"{'component':<{w0}}{'role':<10}{'returns'}")
         for name, model, ret in rows:
             print(f"{name:<{w0}}{model:<10}{ret}")
-        for h in hooks:
-            print(f"{h:<{w0}}{'hook':<10}session_start")
+        for path, events in hooks:
+            print(f"{path:<{w0}}{'hook':<10}{events}")
         if DASHBOARD.is_dir():
             print(f"{'dashboard/':<{w0}}{'app':<10}vendored web app")
         print()

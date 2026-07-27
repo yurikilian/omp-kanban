@@ -7,10 +7,16 @@
 #   ./install.sh --project        install into ./.omp for this repo only
 #   ./install.sh --with-dashboard also install the session-start dashboard hook
 #                                 (vendored web app; runs npm install + build)
+#   ./install.sh --apply-config   merge the recommended omp settings into
+#                                 config.yml (backs it up first; opt-in)
 #   ./install.sh --uninstall      remove previously installed files
 #   ./install.sh --dry-run        show what would happen, change nothing
 #
 # Combine flags freely, e.g. ./install.sh --project --with-dashboard --dry-run
+#
+# The guardrails hook (hooks/pre/kb-guardrails.ts) is installed always, not
+# behind a flag. It only inspects `task` calls spawning kb-* agents, so it is
+# inert in every session that is not running the board.
 
 set -euo pipefail
 
@@ -19,15 +25,17 @@ SCOPE="user"
 DRY=0
 UNINSTALL=0
 DASHBOARD=0
+APPLY_CONFIG=0
 
 for arg in "$@"; do
   case "$arg" in
     --project)   SCOPE="project" ;;
     --user)      SCOPE="user" ;;
     --with-dashboard) DASHBOARD=1 ;;
+    --apply-config) APPLY_CONFIG=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --dry-run|-n) DRY=1 ;;
-    -h|--help)   sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -64,9 +72,15 @@ if [ "$UNINSTALL" -eq 1 ]; then
       say "  removed skills/$s"
     fi
   done
-  if [ -e "$HOOK_DIR/kb-dashboard.ts" ]; then
-    run rm -f "$HOOK_DIR/kb-dashboard.ts"
-    say "  removed hooks/pre/kb-dashboard.ts"
+  for h in kb-dashboard.ts kb-guardrails.ts; do
+    if [ -e "$HOOK_DIR/$h" ]; then
+      run rm -f "$HOOK_DIR/$h"
+      say "  removed hooks/pre/$h"
+    fi
+  done
+  if [ -e "$ROOT/omp-kanban-guardrails.yml" ]; then
+    run rm -f "$ROOT/omp-kanban-guardrails.yml"
+    say "  removed omp-kanban-guardrails.yml"
   fi
   if [ -d "$DASHBOARD_DIR" ]; then
     run rm -rf "$DASHBOARD_DIR"
@@ -110,7 +124,7 @@ if [ -n "$COLLISIONS" ]; then
   fi
 fi
 
-run mkdir -p "$AGENT_DIR" "$SKILLS_DIR"
+run mkdir -p "$AGENT_DIR" "$SKILLS_DIR" "$HOOK_DIR"
 
 for f in $AGENTS; do
   run cp "$SRC/agents/$f" "$AGENT_DIR/$f"
@@ -122,6 +136,18 @@ for s in $SKILLS; do
   run cp -R "$SRC/skills/$s/." "$SKILLS_DIR/$s/"
   say "  skills/$s/"
 done
+
+# The dispatch guardrails. Not behind a flag: it examines only `task` calls that
+# spawn kb-* agents, so it is inert outside a kanban cycle, and the caps it
+# enforces are the ones the skill's prose now promises. Set KB_GUARD_DISABLED=1
+# to turn it off without uninstalling.
+run cp "$SRC/hooks/pre/kb-guardrails.ts" "$HOOK_DIR/kb-guardrails.ts"
+say "  hooks/pre/kb-guardrails.ts"
+
+# The recommended omp settings, as an overlay you can pass per run with
+# `omp --config`. --apply-config merges them into config.yml instead.
+run cp "$SRC/guardrails/omp-config.recommended.yml" "$ROOT/omp-kanban-guardrails.yml"
+say "  omp-kanban-guardrails.yml (overlay; not applied unless you ask)"
 
 # ------------------------------------------------------------- dashboard (opt-in)
 if [ "$DASHBOARD" -eq 1 ]; then
@@ -150,11 +176,64 @@ if [ "$DASHBOARD" -eq 1 ]; then
   fi
 fi
 
+# ---------------------------------------------------------- config (opt-in)
+# Deliberately opt-in and deliberately non-destructive: these are omp's own
+# settings, not this extension's, and silently rewriting a user's config.yml on
+# install would be a surprising thing for a plugin to do. Existing values are
+# left alone — only keys absent from config.yml are added, so re-running is safe
+# and a deliberate override is never clobbered.
+if [ "$APPLY_CONFIG" -eq 1 ]; then
+  CONFIG_YML="$ROOT/config.yml"
+  say ""
+  say "Merging recommended settings into $CONFIG_YML"
+  if [ "$DRY" -eq 1 ]; then
+    say "  would: back up config.yml and add any missing recommended keys"
+  elif ! python3 -c "import yaml" 2>/dev/null; then
+    say "  pyyaml is not installed, so the merge cannot run safely."
+    say "  Either: pip install pyyaml && ./install.sh --apply-config"
+    say "  Or use the overlay instead, which needs nothing:"
+    say "    omp --config $ROOT/omp-kanban-guardrails.yml"
+    exit 1
+  else
+    BACKUP="$CONFIG_YML.bak.$(date +%Y%m%d-%H%M%S)"
+    [ -f "$CONFIG_YML" ] && cp "$CONFIG_YML" "$BACKUP" && say "  backed up to $BACKUP"
+    python3 - "$CONFIG_YML" "$SRC/guardrails/omp-config.recommended.yml" <<'PY'
+import sys, yaml
+
+target, source = sys.argv[1], sys.argv[2]
+try:
+    current = yaml.safe_load(open(target).read()) or {}
+except FileNotFoundError:
+    current = {}
+recommended = yaml.safe_load(open(source).read()) or {}
+
+added = []
+
+def merge(dst, src, path=""):
+    for key, value in src.items():
+        where = f"{path}.{key}" if path else key
+        if isinstance(value, dict):
+            merge(dst.setdefault(key, {}), value, where)
+        elif key not in dst:
+            dst[key] = value
+            added.append(f"{where}: {value}")
+
+merge(current, recommended)
+if added:
+    with open(target, "w") as fh:
+        yaml.safe_dump(current, fh, default_flow_style=False, sort_keys=False)
+for line in added:
+    print(f"  + {line}")
+print(f"  {len(added)} key(s) added; existing values left untouched")
+PY
+  fi
+fi
+
 say ""
 if [ "$DASHBOARD" -eq 1 ]; then
   say "Installed $AGENT_COUNT agents, $SKILL_COUNT skills, and the session-start dashboard hook."
 else
-  say "Installed $AGENT_COUNT agents and $SKILL_COUNT skills."
+  say "Installed $AGENT_COUNT agents, $SKILL_COUNT skills, and the guardrails hook."
 fi
 say ""
 say "Next:"
@@ -164,6 +243,13 @@ say "  2. omp -p '/extensions' — confirm the kanban-cycle and cost-forensics s
 say "  3. Ctrl+R inside /agents reloads from disk after an edit."
 say "  4. Add .kanban/ to your .gitignore — cycle artifacts live there."
 say ""
+if [ "$APPLY_CONFIG" -eq 0 ]; then
+  say "Budget settings (not applied — these are omp's own settings, so opting in is yours):"
+  say "  ./install.sh --apply-config             merge them into config.yml, or"
+  say "  omp --config $ROOT/omp-kanban-guardrails.yml"
+  say "  See docs/CONFIGURATION.md for what each key does and what enforces it."
+  say ""
+fi
 if [ "$DASHBOARD" -eq 1 ]; then
   say "Dashboard:"
   say "  It launches automatically on the next omp session start, on a random free"

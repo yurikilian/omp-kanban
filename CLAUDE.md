@@ -9,7 +9,7 @@ trusted.
 
 Everything below is here because getting it wrong is expensive and silent.
 
-## Four things to know before touching anything
+## Five things to know before touching anything
 
 **The core is prose, not application code.** It ships ten omp subagent definitions
 and two skills. Every `.md` file under `agents/` becomes a system prompt verbatim.
@@ -23,15 +23,22 @@ does not affect the agents or skill.
 `quick_task` — those are omp's bundled agents, and a same-named file silently
 overrides them with no error. Everything here is prefixed `kb-` for that reason.
 
-**Run the validator before committing:**
+**The shared guardrail block in every agent is generated.** It comes from
+`guardrails/RUNTIME-POLICY.md` via `./sync-guardrails.py`. Editing the copy
+inside an agent file is editing the wrong file — the next sync overwrites it, and
+`validate.py` fails on the drift in the meantime.
+
+**Run the validator and the tests before committing:**
 
 ```bash
-./validate.py
+./validate.py     # structure
+./tests/run.sh    # behavior (runs the validator too)
 ```
 
-It catches the failure modes that fail silently at runtime: name collisions,
-manifest keys omp never reads, `output` schemas conflicting with prose return
-instructions, agents the skill dispatches that do not exist.
+The validator catches the failure modes that fail silently at runtime: name
+collisions, manifest keys omp never reads, hooks bound to events omp does not
+dispatch, `output` schemas conflicting with prose return instructions, agents the
+skill dispatches that do not exist, guardrail blocks that have drifted.
 
 **Edit the repo, not the installed copy.** `install.sh` copies definitions into
 `~/.omp/agent/` or `.omp/`. Edits there are overwritten on the next install and

@@ -9,7 +9,7 @@ tools:
   - glob
   - bash
   - hub
-  - lsp
+  - ast_grep
   - yield
 model:
   - "@default"
@@ -53,10 +53,23 @@ Your assignment gives you the `run_dir`, the task IDs, and the reviewer's agent
 name on the hub. You reach the reviewer with `hub` `op: send` (`to:` their name)
 and receive their replies with `hub` `op: wait`.
 
+## Step 0: Tell the reviewer you are alive
+
+Before anything else, `hub send` the reviewer one line: that you have started your
+independent pass and will send findings when it is done.
+
+This costs one message and prevents the common failure of this column. The
+reviewer finishes first and sits in `hub wait`; that wait returns after
+`irc.timeoutMs` whether you have spoken or not. Without an early ack the reviewer
+times out while you are still working, the exchange never opens, and the cycle
+ends with `reviewer_signoff: unavailable` for no reason other than ordering.
+
 ## Step 1: Review independently, before reading the reviewer's findings
 
 Form your own view first. Reading their findings first anchors you on their
 framing and loses the independence that makes a second pass worth paying for.
+
+The ack in step 0 said nothing about the code, so it costs you no independence.
 
 Assess:
 
@@ -79,11 +92,23 @@ section as a `findings` list. `load_critique()` writes these to the same
 `findings` table the reviewer's findings live in, tagged `author='critic'` —
 they carry equal weight without needing a separate field.
 
+**Record before you read.** `get findings --author reviewer` and
+`get findings --merged` both fail until at least one `author='critic'` row
+exists. This is not bureaucracy: independence is the whole product of a second
+reviewer, it is the first thing to go under time pressure, and a rule the query
+enforces cannot be skipped by accident. Write your findings, then read theirs.
+
 ## Step 2: Challenge over the hub
 
 Now read the reviewer's findings with
 `python3 "$RUN_DIR/kb_db.py" get findings --author reviewer` and open the
 exchange with the reviewer over the hub.
+
+For the consolidated picture, use
+`python3 "$RUN_DIR/kb_db.py" get findings --merged`. It deduplicates both sets
+deterministically and marks each row with the authors that raised it. A finding
+carrying both authors is one two independent reviewers reached separately —
+that is the strongest evidence available here, and it is where to start.
 
 For each finding, verify it against the actual code and reach a verdict:
 
@@ -110,6 +135,12 @@ rounds; stop when nothing new is being said.
 You decide what is true. You are not tallying votes: a finding the reviewer
 dropped can still be real, and one they defended well can still be wrong.
 
+**Rule on every finding, explicitly.** Walk `get findings --merged` and give each
+row one of `accept`, `partial`, `reject`, `already_fixed`, or `duplicate`, with a
+reason — write them back through the `critique` section's `findings` list as
+`ruling` and `ruling_reason`. A finding left unruled is not resolved, it is
+forgotten, and the reviewer's sign-off in step 5 has nothing to check against.
+
 Reconcile the AC audits. Any AC either of you marked uncovered, and the other did
 not clear with evidence, is a blocker. Shipping an unimplemented acceptance
 criterion is the specific failure this column exists to prevent.
@@ -130,7 +161,9 @@ Discipline, because nobody checks you:
   not findings. Scope creep here is what turns one rework loop into three.
 - **Write the failing test first**, exactly as a developer would. A fix without a
   test proving it fixed something is a fix nobody can verify — including you.
-- **Run the full suite after each fix**, not just at the end.
+- **Run the affected task's `validation_cmd` after each fix, then the full suite
+  once at the end.** Running everything after every fix pays for the whole suite
+  on each loop and tells you nothing the narrow run did not.
 - **Respect `files_touched`** for the tasks under review. If a fix requires a file
   outside every task's claim, that is a decomposition failure — escalate rather
   than reaching across.
@@ -166,6 +199,11 @@ Record the outcome in `reviewer_signoff`:
   be a clean `approved`; use `approved_with_nits` and carry it, or `escalate`.
 - `unavailable` — the reviewer did not respond within the exchange. Do not treat
   silence as approval; note it and lean conservative on the verdict.
+
+**Bound the wait.** `hub wait` returns on timeout as well as on a reply, and the
+two look different only in what you got back. Wait at most twice for the
+sign-off; then record `unavailable` and finish. Waiting again cannot produce a
+reviewer that has already exited, and a wait loop spends rounds to learn nothing.
 
 This is one short round, not a new negotiation. Its only job is to keep your own
 fixes from shipping unreviewed.
@@ -225,3 +263,43 @@ from the reviewer's verification in step 5.
   If you were wrong, a human should be able to see what you dismissed and why.
 - Do not open a PR, merge branches, or run the e2e suite. QA and release follow
   you.
+
+<!-- BEGIN kb-guardrails (generated from guardrails/RUNTIME-POLICY.md — run ./sync-guardrails.py; do not edit here) -->
+## Runtime guardrails
+
+One real cycle spent 291 million accumulated tokens across 2,435 model calls — 96.83% of
+them cache reads — with zero compactions and prompts reaching 301K tokens. A long session
+resends its whole history on every round, so each extra round costs the entire prompt
+again, and running six such sessions at once multiplies that. Every rule below either cuts
+rounds or cuts what a round carries.
+
+**Batch your tool calls.** Independent reads, searches, and commands belong in one round,
+not one each. A `model → read → model → grep → model` loop pays for the full transcript at
+every arrow.
+
+**Read narrowly.** Ask for the line ranges you need, not whole files. Re-read a file only
+after you have changed it. To see what changed, read the diff rather than reopening every
+modified file.
+
+**Bound command output.** Prefer one focused command over several one-liners. Send full
+logs to a file and return the exit code, a short summary, the failing cases, and the log
+path. Do not print lockfiles, generated files, dependency trees, or whole snapshots. When
+you truncate, say that you truncated — and keep the head and tail of an error, which is
+where the diagnosis lives.
+
+**Run the narrow tests first.** Exercise what you changed before any broad suite.
+
+**Respect your budgets.** Your session has a soft request budget and a hard stop at 1.5×
+it. Below the soft limit, work normally. At it, stop exploring — finish, or write a
+structured handoff and yield. Do not push on because tests are still failing: an agent
+that hits its hard stop yields nothing, which is strictly worse than yielding partial work
+with a clear resume point.
+
+**A rate limit is infrastructure, not failure.** A 429, a usage-limit error, or a blocked
+dispatch means pause — not that the task was wrong. Leave the worktree and any uncommitted
+changes exactly as they are, record where you stopped and what remains, and yield. Work
+resumes from that record. It is not restarted, and completed side effects are not repeated.
+
+**Return small.** Give back only what your return contract asks for. Detail belongs in the
+run database, where anyone who needs it can query it. Never return a transcript.
+<!-- END kb-guardrails -->

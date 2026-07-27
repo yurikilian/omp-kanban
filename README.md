@@ -5,7 +5,7 @@ and one skill.
 
 Hand it an issue or a specification document. It plans the work into user stories
 with testable acceptance criteria, implements tasks in parallel with strict TDD,
-runs them past two review agents that argue over IRC and apply the fixes they
+runs them past two review agents that argue over the hub and apply the fixes they
 agree on, verifies the whole thing end to end, and opens a pull request with
 release notes and an AC-to-test traceability table.
 
@@ -38,6 +38,24 @@ the copy in this repo.
 Then open omp, run `/agents`, and confirm the ten `kb-*` agents resolved. `Ctrl+R`
 inside that view reloads from disk after any edit.
 
+### Budget settings (recommended, opt-in)
+
+Installing puts the guardrails hook in place, which caps how many agents the
+board starts at once. The other half — how many rounds each agent may make, when
+context is compacted, how much tool output comes back — is omp's own
+configuration, so applying it is a separate, explicit step:
+
+```bash
+omp --config ~/.omp/agent/omp-kanban-guardrails.yml   # per run, reversible
+./install.sh --apply-config                            # merge into config.yml
+```
+
+`--apply-config` backs up `config.yml` first and adds only keys you have not
+already set. Every key it touches is documented, with omp's default and the
+reason for the change, in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** —
+which also says plainly which limits are enforced in code, which are
+configuration, and which are only instructions to the agents.
+
 ### Uninstalling
 
 ```bash
@@ -46,9 +64,9 @@ inside that view reloads from disk after any edit.
 ./uninstall.sh --dry-run    # show what would be removed, change nothing
 ```
 
-This removes the agents, skill, and — if you installed it — the dashboard hook
-and vendored app. It is a thin wrapper over `install.sh --uninstall` (same effect;
-one place for the removal logic). The dashboard's runtime state
+This removes the agents, skill, the guardrails hook and its config overlay, and
+— if you installed it — the dashboard hook and vendored app. It is a thin wrapper
+over `install.sh --uninstall` (same effect; one place for the removal logic). The dashboard's runtime state
 (`~/.omp/agent/dashboard/`, including `dashboard.db`) is left in place — delete it
 by hand if you want it gone.
 
@@ -59,14 +77,19 @@ by hand if you want it gone.
 | Intake | `kb-intake` | smol | 1 |
 | Backlog | `kb-planner` | slow | 1, spec input only |
 | Todo | `kb-decompose` | slow | 1 |
-| In Progress | `kb-dev` | default | parallel per layer |
-| In Review | `kb-review` + `kb-critic` | slow + default | 2, over IRC |
+| In Progress | `kb-dev` | default | 2 per batch, batches in sequence |
+| In Review | `kb-review` + `kb-critic` | slow + default | 2, over the hub — one bounded pair |
 | QA | `kb-qa` | default | 1 |
 | Done | `kb-release` | smol | 1 |
 | Post-cycle | `kb-retro` | smol | 1, skipped when trivial |
 
 `kb-forensics` sits outside the board. Dispatch it when you want to know where
 your tokens went.
+
+The In Progress and In Review counts are caps, enforced in code by the guardrails
+hook and counted across the whole workflow rather than per parent agent. During
+recovery from a provider rate limit the cap drops to a single canary. See
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 Models are set by role, not by name, so they resolve against whatever you are
 authenticated for. `slow` is reserved for the three places where a wrong call
@@ -132,7 +155,9 @@ explaining before you rely on it.
 
 `kb-review` reads the diff and produces findings. `kb-critic` first forms its own
 independent view — deliberately before reading those findings, because reading
-them first anchors it — then challenges the reviewer's work over IRC. They argue
+them first anchors it, and `get findings --author reviewer` refuses to answer
+until the critic has recorded findings of its own — then challenges the
+reviewer's work over the hub. They argue
 for at most two rounds, each conceding where the other is right. The critic then
 reconciles the dispute into one verdict and **applies the surviving fixes
 itself**. Finally the reviewer verifies those fixes in one closing round —
@@ -229,6 +254,32 @@ acceptance criterion needs real end-to-end wiring, no retrospective). Escalating
 the full board is an explicit choice; defaulting to fewer agents is the safe one.
 For a one-line fix, it drops further still to `kb-dev` plus the review pair.
 
+### The expensive failure, and what stops it now
+
+One real cycle reached **291 million accumulated tokens** across 2,435 model
+calls. **96.83% of that was cache reads**, there were **zero compaction events**,
+the largest prompt hit 301K tokens, and individual workers made 100–170 model
+rounds. Six of them ran at once. When the provider started returning 429s the
+whole batch failed over to the fallback provider simultaneously and exhausted
+that too; the retry launched all six again.
+
+The mechanism is worth stating, because it decides which knobs matter: **a model
+call re-sends the conversation so far.** A worker on its 150th round pays for
+everything it has read, 150 times. Six workers multiply that. Cache reads make
+each resend cheap, not free — and quota is spent either way.
+
+So the board now bounds all three: how many sessions run at once (2, enforced in
+code), how many rounds each makes (`task.softRequestBudget: 40`, hard-stopped by
+omp at 60), and how much each round carries (task packets with only that task's
+acceptance criteria, plus compaction at 100K tokens). A rate limit pauses
+dispatch and preserves every worktree instead of stampeding the fallback, and
+recovery starts with a single canary.
+
+Full breakdown, including what is enforced in code versus configuration versus
+prompt: **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+
+### Auditing what you did spend
+
 `kb-forensics` audits where your tokens actually went. It discovers the session
 JSONL schema rather than assuming it, reports honestly when something is not
 measurable, and ranks its recommendations by expected saving — role
@@ -242,13 +293,22 @@ value is entirely in what you change afterward.
 Agent frontmatter and the `package.json` manifest are validated against omp's
 documented schemas by `./validate.py`, which runs in CI. The validator catches
 the failure modes that fail *silently* at runtime — an agent name colliding with
-one of omp's bundled agents, a manifest key that resolves but is never wired, an
-`output` schema conflicting with a prose return instruction.
+one of omp's bundled agents, a manifest key that resolves but is never wired, a
+hook subscribing to an event omp does not dispatch, a shared guardrail block that
+has drifted from its source, an `output` schema conflicting with a prose return
+instruction.
 
-**Not yet exercised against a live omp install.** The subagent `output` schemas
-are the most likely thing to need adjusting if omp validates them more strictly
-than assumed. Run `omp -p '/extensions'` and `/agents` after installing to see
-what actually resolved and from where.
+`./tests/run.sh` adds behavioral tests: the run-state helper's task packets,
+oversized-task detection, and review-independence gate under Python's `unittest`,
+and the dispatch hook's concurrency caps, circuit breaker, and retry
+deduplication under `node --test` with an injected clock. No dependencies beyond
+Python 3 and Node 22.6+.
+
+**The dispatch guardrails are tested; the board is still not exercised against a
+live omp install.** The subagent `output` schemas are the most likely thing to
+need adjusting if omp validates them more strictly than assumed. Run
+`omp -p '/extensions'` and `/agents` after installing to see what actually
+resolved and from where.
 
 Issues and PRs welcome.
 

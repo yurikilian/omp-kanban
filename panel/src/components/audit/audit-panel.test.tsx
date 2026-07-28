@@ -70,4 +70,17 @@ describe("AuditPanel", () => {
     expect(within(audit).getByText("61,000 input tokens")).toBeInTheDocument();
     expect(within(audit).getByText("76,000 input tokens")).toBeInTheDocument();
   });
+  it("distinguishes a completed audit with no findings from no audit yet (E4-S8-AC6)", () => {
+    const completedWithoutFindings = { ...COMPLETED_AUDIT, findings: [] };
+    const { rerender } = render(<SessionDetail session={SESSION} audit={completedWithoutFindings} />);
+
+    const completedAudit = screen.getByRole("region", { name: "Audit findings" });
+    expect(within(completedAudit).getByText("This completed audit found no findings.")).toBeInTheDocument();
+
+    rerender(<SessionDetail session={SESSION} audit={null} />);
+
+    const noAuditYet = screen.getByRole("region", { name: "Audit findings" });
+    expect(within(noAuditYet).getByText("No audit has been completed for this session yet.")).toBeInTheDocument();
+    expect(within(noAuditYet).queryByText("This completed audit found no findings.")).not.toBeInTheDocument();
+  });
 });

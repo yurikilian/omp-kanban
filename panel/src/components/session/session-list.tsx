@@ -41,6 +41,11 @@ function formatLastActivity(iso: string): string {
   }).format(new Date(iso));
 }
 
+function newestFirst(sessions: SessionSummary[]): SessionSummary[] {
+  return [...sessions].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
+}
+
+
 /** Renders a usage metric, or the literal word "Unavailable" - never 0, blank or an inferred value (E3-S1-AC2). */
 function MetricCell({ value, format }: { value: number | null; format: (value: number) => string }) {
   if (value === null) {
@@ -51,16 +56,16 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
 
 /**
  * One row per recorded OMP session - title, project, last activity,
- * duration, cost, input/output tokens, agent count and tool-call count -
- * ordered newest first by last activity (E3-S1-AC1). Sorts its own input
- * rather than trusting the caller's order, so it stays correct even fed a
- * set assembled from multiple sources (e.g. a future live update).
+ * duration, cost, input/output tokens, agent count and tool-call count.
+ * The initial snapshot is newest first. Live updates replace a row in place
+ * and newly observed sessions append, keeping a user’s selection, scroll
+ * position and pointer target stable while the stream changes (E3-S9-AC2).
  */
 export function SessionList({ sessions }: SessionListProps) {
-  const [liveSessions, setLiveSessions] = useState(sessions);
+  const [liveSessions, setLiveSessions] = useState(() => newestFirst(sessions));
 
   useEffect(() => {
-    setLiveSessions(sessions);
+    setLiveSessions(newestFirst(sessions));
   }, [sessions]);
 
   const refreshSession = useCallback(async (sessionId: string) => {
@@ -69,9 +74,14 @@ export function SessionList({ sessions }: SessionListProps) {
       if (!response.ok) return;
 
       const updatedSession = (await response.json()) as SessionSummary;
-      setLiveSessions((currentSessions) =>
-        currentSessions.map((session) => (session.id === sessionId ? updatedSession : session)),
-      );
+      setLiveSessions((currentSessions) => {
+        const sessionIndex = currentSessions.findIndex((session) => session.id === sessionId);
+        if (sessionIndex === -1) return [...currentSessions, updatedSession];
+
+        const nextSessions = [...currentSessions];
+        nextSessions[sessionIndex] = updatedSession;
+        return nextSessions;
+      });
     } catch {
       return;
     }
@@ -79,11 +89,9 @@ export function SessionList({ sessions }: SessionListProps) {
 
   useLiveSessions(refreshSession);
 
-  const ordered = [...liveSessions].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
-
   return (
     <table className="w-full border-collapse text-sm">
-      <caption className="sr-only">Recorded OMP sessions, newest first</caption>
+      <caption className="sr-only">Recorded OMP sessions</caption>
       <thead>
         <tr className="border-b border-border text-left text-muted-foreground">
           <th scope="col" className="px-3 py-2 font-medium">
@@ -116,7 +124,7 @@ export function SessionList({ sessions }: SessionListProps) {
         </tr>
       </thead>
       <tbody>
-        {ordered.map((session) => (
+        {liveSessions.map((session) => (
           <tr key={session.id} className="border-b border-border last:border-0 hover:bg-muted/50">
             <td className="px-3 py-2">{session.title}</td>
             <td className="px-3 py-2 text-muted-foreground">{session.project}</td>

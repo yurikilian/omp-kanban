@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { DelegationEvent } from "@/components/events/delegation-event";
 import { ErrorEvent } from "@/components/events/error-event";
@@ -11,6 +11,8 @@ import { ToolCallEvent } from "@/components/events/tool-call-event";
 import { useWindowedEvents } from "@/hooks/use-windowed-events";
 import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionEventUrl } from "@/lib/session-url";
 import { MissingEventNotice } from "./missing-event-notice";
+import { ReturnToLive } from "./return-to-live";
+import { useFollowLive } from "@/hooks/use-follow-live";
 import type { TimelineEvent } from "@/server/sessions/timeline";
 
 export interface EventStreamProps {
@@ -18,6 +20,8 @@ export interface EventStreamProps {
 }
 
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; events: TimelineEvent[] };
+
+const TIMELINE_REFRESH_INTERVAL_MS = 2_000;
 
 /**
  * Dispatches one merged-transcript event to its own visual treatment
@@ -133,22 +137,28 @@ export function EventStream({ sessionId }: EventStreamProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
 
-    fetch(`/api/sessions/${sessionId}/timeline`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Failed to load timeline: ${response.status}`);
-        return response.json() as Promise<TimelineEvent[]>;
-      })
-      .then((events) => {
-        if (!cancelled) setState({ status: "ready", events });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: "error" });
-      });
+    const loadTimeline = (initialLoad: boolean) => {
+      fetch(`/api/sessions/${sessionId}/timeline`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Failed to load timeline: ${response.status}`);
+          return response.json() as Promise<TimelineEvent[]>;
+        })
+        .then((events) => {
+          if (!cancelled) setState({ status: "ready", events });
+        })
+        .catch(() => {
+          if (!cancelled && initialLoad) setState({ status: "error" });
+        });
+    };
+
+    setState({ status: "loading" });
+    loadTimeline(true);
+    const refreshTimer = window.setInterval(() => loadTimeline(false), TIMELINE_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
     };
   }, [sessionId]);
 
@@ -170,6 +180,12 @@ export function EventStream({ sessionId }: EventStreamProps) {
   const events = state.status === "ready" ? state.events : [];
   const visibleEvents = useMemo(() => eventsForAgentBranch(events, selectedAgentId), [events, selectedAgentId]);
   const { containerRef, items, totalSize, measureElement } = useWindowedEvents(visibleEvents);
+  const liveAnchorRef = useRef<HTMLDivElement>(null);
+  const { isFollowing, returnToLive } = useFollowLive({
+    eventCount: visibleEvents.length,
+    timelineRef: containerRef,
+    liveAnchorRef,
+  });
   const selectedEvent = useMemo(
     () => visibleEvents.find((event) => event.id === selectedEventId),
     [selectedEventId, visibleEvents],
@@ -224,6 +240,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
           <p>{eventInspectorText(selectedEvent)}</p>
         </aside>
       )}
+      <ReturnToLive isVisible={!isFollowing} onReturn={returnToLive} />
       <div data-slot="event-stream" ref={containerRef} style={{ position: "relative", height: totalSize }}>
         {items.map(({ event, virtualItem }) => (
           <div
@@ -252,6 +269,11 @@ export function EventStream({ sessionId }: EventStreamProps) {
             {renderEvent(event)}
           </div>
         ))}
+        <div
+          ref={liveAnchorRef}
+          aria-hidden="true"
+          style={{ position: "absolute", top: totalSize, width: 1, height: 1 }}
+        />
       </div>
     </>
   );

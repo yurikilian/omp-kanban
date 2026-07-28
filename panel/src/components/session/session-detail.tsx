@@ -1,3 +1,4 @@
+import { GenerateAuditButton } from "@/components/audit/generate-audit-button";
 import { AgentTree } from "@/components/agents/agent-tree";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { EventStream } from "./event-stream";
@@ -17,6 +18,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
         startedAt={session.startedAt}
         durationMs={session.durationMs}
       />
+      <GenerateAuditButton sessionId={session.id} sessionTitle={session.title} />
       <MetricStrip
         costUsd={session.costUsd}
         inputTokens={session.inputTokens}

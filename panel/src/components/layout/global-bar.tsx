@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { getTheme, toggleTheme, type Theme } from "@/lib/theme";
+import { usePreferences } from "@/components/layout/preferences-provider";
 
 export interface GlobalBarProps {
   /** DESIGN-SYSTEM.md section 5.1 - the project the panel is inspecting. */
@@ -16,13 +15,8 @@ export interface GlobalBarProps {
  * later tasks.
  */
 export function GlobalBar({ projectName }: GlobalBarProps) {
-  // Server-rendered markup has no document to read, so this starts "light"
-  // and syncs to the real value (set by src/lib/theme.ts) once mounted.
-  const [theme, setTheme] = useState<Theme>("light");
-
-  useEffect(() => {
-    setTheme(getTheme());
-  }, []);
+  const { preferences, setTheme } = usePreferences();
+  const { theme } = preferences;
 
   return (
     <header className="global-bar">
@@ -31,7 +25,7 @@ export function GlobalBar({ projectName }: GlobalBarProps) {
         type="button"
         className="global-bar__theme-toggle"
         aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-        onClick={() => setTheme(toggleTheme())}
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       >
         {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
       </button>

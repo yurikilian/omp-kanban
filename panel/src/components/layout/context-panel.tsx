@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  CONTEXT_PANEL_DEFAULT_WIDTH,
   CONTEXT_PANEL_MAX_WIDTH,
   CONTEXT_PANEL_MIN_WIDTH,
-  clampContextPanelWidth,
 } from "@/lib/panel-size";
+import { usePreferences } from "@/components/layout/preferences-provider";
 
 export interface ContextPanelProps {
   children?: ReactNode;
@@ -23,14 +22,15 @@ export interface ContextPanelProps {
  * later tasks.
  */
 export function ContextPanel({ children }: ContextPanelProps) {
-  const [width, setWidth] = useState(CONTEXT_PANEL_DEFAULT_WIDTH);
+  const { preferences, setContextPanelWidth } = usePreferences();
+  const { contextPanelWidth: width } = preferences;
   const dragOrigin = useRef<{ pointerX: number; width: number } | null>(null);
 
   const handlePointerMove = useCallback((event: PointerEvent) => {
     const origin = dragOrigin.current;
     if (!origin) return;
-    setWidth(clampContextPanelWidth(origin.width + (event.clientX - origin.pointerX)));
-  }, []);
+    setContextPanelWidth(origin.width + (event.clientX - origin.pointerX));
+  }, [setContextPanelWidth]);
 
   const stopDragging = useCallback(() => {
     dragOrigin.current = null;

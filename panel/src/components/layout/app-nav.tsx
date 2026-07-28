@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePreferences } from "@/components/layout/preferences-provider";
 import {
   Activity,
   Bot,
@@ -37,8 +38,7 @@ export interface AppNavProps {
 /**
  * DESIGN-SYSTEM.md section 5.2 ("Application Navigation"). Width resolves to
  * 208px expanded / 64px collapsed via src/styles/shell.css's
- * `[data-collapsed]` selector - never `auto` (E2-S2-AC2). Persisting the
- * expanded state locally is out of scope here (see T30).
+ * `[data-collapsed]` selector - never `auto` (E2-S2-AC2).
  *
  * The collapse/expand width transition is suppressed when the user has
  * `prefers-reduced-motion: reduce` set (E2-S2-AC6). jsdom's computed-style
@@ -49,7 +49,8 @@ export interface AppNavProps {
  * src/styles/shell.css keys off the same way it keys off `data-collapsed`.
  */
 export function AppNav({ current }: AppNavProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const { preferences, setNavigationCollapsed } = usePreferences();
+  const { navigationCollapsed: collapsed } = preferences;
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -72,7 +73,7 @@ export function AppNav({ current }: AppNavProps) {
         type="button"
         className="app-nav__toggle"
         aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-        onClick={() => setCollapsed((value) => !value)}
+        onClick={() => setNavigationCollapsed(!collapsed)}
       >
         {collapsed ? (
           <ChevronsRight className="app-nav__icon" aria-hidden="true" />

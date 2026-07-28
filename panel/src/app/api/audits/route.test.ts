@@ -54,7 +54,10 @@ describe("POST /api/audits", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual(AUDIT_JOB);
     expect(getSessionDetail).toHaveBeenCalledWith(SESSION_ID);
-    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, undefined, {
+      pricing: { available: false, pricing: null },
+      rerun: false,
+    });
   });
 
   it("forwards nonblank user-supplied pricing verbatim (E4-S1-AC4)", async () => {
@@ -65,7 +68,10 @@ describe("POST /api/audits", () => {
     const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing }));
 
     expect(response.status).toBe(201);
-    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: true, pricing });
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, undefined, {
+      pricing: { available: true, pricing },
+      rerun: false,
+    });
   });
 
   it("marks whitespace-only pricing unavailable (E4-S1-AC4)", async () => {
@@ -75,7 +81,10 @@ describe("POST /api/audits", () => {
     const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing: " \n\t " }));
 
     expect(response.status).toBe(201);
-    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, undefined, {
+      pricing: { available: false, pricing: null },
+      rerun: false,
+    });
   });
 
   it("treats non-string pricing as unavailable without failing the request (E4-S1-AC4)", async () => {
@@ -85,7 +94,10 @@ describe("POST /api/audits", () => {
     const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing: { input: "$1.25" } }));
 
     expect(response.status).toBe(201);
-    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, undefined, {
+      pricing: { available: false, pricing: null },
+      rerun: false,
+    });
   });
 
   it("rejects an unsafe session target before resolving or creating an audit (E4-S1-AC1)", async () => {

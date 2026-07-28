@@ -7,13 +7,21 @@ const latestAuditJobBySessionId = new Map<string, AuditJob>();
 const auditJobById = new Map<string, AuditJob>();
 const auditJobByFingerprint = new Map<string, AuditJob>();
 
-export async function createAuditJob(sessionId: string, target?: AuditTarget): Promise<AuditJob> {
+export interface CreateAuditJobOptions {
+  rerun?: boolean;
+}
+
+export async function createAuditJob(
+  sessionId: string,
+  target?: AuditTarget,
+  options: CreateAuditJobOptions = {},
+): Promise<AuditJob> {
   const fingerprint = target
     ? fingerprintAuditTarget(target.targetContent, target.analyzerVersion)
     : null;
   const matchingAudit = fingerprint ? auditJobByFingerprint.get(fingerprint) : null;
 
-  if (matchingAudit) return matchingAudit;
+  if (matchingAudit && !options.rerun) return matchingAudit;
 
   const job: AuditJob = {
     id: `audit_${randomUUID()}`,

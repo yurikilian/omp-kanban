@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { dispatchQueuedAudit } from "./dispatch";
+import { dispatchQueuedAudit, getAuditBundleDirectory } from "./dispatch";
+import { reconcileAudit } from "./reconcile";
 import type { AuditPricing } from "./analyzer-command";
 import type { AuditJob } from "./types";
 
@@ -23,9 +24,18 @@ export async function createAuditJob(
   latestAuditJobBySessionId.set(sessionId, job);
 
   setImmediate(() => {
-    void dispatchQueuedAudit({ auditId: job.id, pricing, sessionId }).catch((error) => {
-      console.error(`Failed to start audit ${job.id}`, error);
-    });
+    void dispatchQueuedAudit({ auditId: job.id, pricing, sessionId })
+      .then(async (child) => {
+        if (!child) return;
+
+        Object.assign(
+          job,
+          await reconcileAudit({ bundleDirectory: getAuditBundleDirectory(job.id), child }),
+        );
+      })
+      .catch((error) => {
+        console.error(`Failed to start audit ${job.id}`, error);
+      });
   });
 
   return job;

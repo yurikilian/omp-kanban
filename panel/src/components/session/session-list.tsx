@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
+import "@/styles/table.css";
 import type { SessionSummary } from "@/server/sessions/types";
+import { SessionSort } from "./session-sort";
 
 interface SessionListProps {
   sessions: SessionSummary[];
+  sort?: SessionSortState;
+  onSortChange?: (sort: SessionSortState) => void;
 }
 
 const UNAVAILABLE = "Unavailable";
@@ -59,14 +64,39 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
  * duration, cost, input/output tokens, agent count and tool-call count.
  * The initial snapshot is newest first. Live updates replace a row in place
  * and newly observed sessions append, keeping a user’s selection, scroll
- * position and pointer target stable while the stream changes (E3-S9-AC2).
  */
-export function SessionList({ sessions }: SessionListProps) {
+export function SessionList({ sessions, sort, onSortChange }: SessionListProps) {
   const [liveSessions, setLiveSessions] = useState(() => newestFirst(sessions));
 
   useEffect(() => {
     setLiveSessions(newestFirst(sessions));
   }, [sessions]);
+
+  const [uncontrolledSort, setUncontrolledSort] = useState<SessionSortState>({
+    key: "lastActivity",
+    direction: "descending",
+  });
+  const activeSort = sort ?? uncontrolledSort;
+
+  const updateSort = useCallback(
+    (key: SessionSortKey) => {
+      const nextSort: SessionSortState =
+        activeSort.key === key
+          ? {
+              ...activeSort,
+              direction: activeSort.direction === "ascending" ? "descending" : "ascending",
+            }
+          : { key, direction: "descending" as const };
+
+      if (onSortChange) {
+        onSortChange(nextSort);
+        return;
+      }
+
+      setUncontrolledSort(nextSort);
+    },
+    [activeSort, onSortChange],
+  );
 
   const refreshSession = useCallback(async (sessionId: string) => {
     try {
@@ -89,10 +119,17 @@ export function SessionList({ sessions }: SessionListProps) {
 
   useLiveSessions(refreshSession);
 
+  const ordered =
+    activeSort.key === "lastActivity" && activeSort.direction === "descending"
+      ? liveSessions
+      : sortSessions(liveSessions, activeSort);
+
   return (
-    <table className="w-full border-collapse text-sm">
-      <caption className="sr-only">Recorded OMP sessions</caption>
-      <thead>
+    <>
+      <SessionSort onChange={updateSort} sort={activeSort} />
+      <table className="w-full border-collapse text-sm">
+        <caption className="sr-only">Recorded OMP sessions</caption>
+        <thead>
         <tr className="border-b border-border text-left text-muted-foreground">
           <th scope="col" className="px-3 py-2 font-medium">
             Title
@@ -103,49 +140,50 @@ export function SessionList({ sessions }: SessionListProps) {
           <th scope="col" className="px-3 py-2 font-medium">
             Last activity
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Duration
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Cost
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Input tokens
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Output tokens
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Agents
           </th>
-          <th scope="col" className="px-3 py-2 text-right font-medium">
+          <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Tool calls
           </th>
         </tr>
       </thead>
       <tbody>
-        {liveSessions.map((session) => (
+        {ordered.map((session) => (
           <tr key={session.id} className="border-b border-border last:border-0 hover:bg-muted/50">
             <td className="px-3 py-2">{session.title}</td>
             <td className="px-3 py-2 text-muted-foreground">{session.project}</td>
             <td className="px-3 py-2 text-muted-foreground">
               <time dateTime={session.lastActivityAt}>{formatLastActivity(session.lastActivityAt)}</time>
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">{formatDuration(session.durationMs)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">
+            <td className="session-list__numeric px-3 py-2">{formatDuration(session.durationMs)}</td>
+            <td className="session-list__numeric px-3 py-2">
               <MetricCell value={session.costUsd} format={formatCost} />
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">
+            <td className="session-list__numeric px-3 py-2">
               <MetricCell value={session.inputTokens} format={formatTokenCount} />
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">
+            <td className="session-list__numeric px-3 py-2">
               <MetricCell value={session.outputTokens} format={formatTokenCount} />
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">{session.agentCount.toLocaleString("en-US")}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{session.toolCallCount.toLocaleString("en-US")}</td>
+            <td className="session-list__numeric px-3 py-2">{session.agentCount.toLocaleString("en-US")}</td>
+            <td className="session-list__numeric px-3 py-2">{session.toolCallCount.toLocaleString("en-US")}</td>
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </>
   );
 }

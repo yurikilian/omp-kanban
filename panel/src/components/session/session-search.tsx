@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { useSessionListUrl } from "@/hooks/use-session-list-url";
 import { filterSessionsByQuery } from "@/lib/session-query";
 import type { SessionSummary } from "@/server/sessions/types";
 import { SessionList } from "./session-list";
@@ -15,10 +16,12 @@ interface SessionSearchProps {
  * (E3-S2-AC1), keeping the visible result count in step with the filtered
  * set. A query that matches nothing swaps the table for a no-matches state
  * worded apart from the no-sessions-yet state, with a clear-search action
- * that resets the query and restores the full list (E3-S2-AC2).
+ * that resets the query and restores the full list (E3-S2-AC2). The query
+ * itself lives in the URL (see useSessionListUrl), so a reload restores it
+ * and re-applies the same filter (E3-S2-AC3, E3-S2-AC4).
  */
 export function SessionSearch({ sessions }: SessionSearchProps) {
-  const [query, setQuery] = useState("");
+  const { query, setQuery } = useSessionListUrl();
   const filtered = useMemo(() => filterSessionsByQuery(sessions, query), [sessions, query]);
 
   return (

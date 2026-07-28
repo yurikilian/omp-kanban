@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-failed-without-summary",
+  "coverageGaps": ["transcript path did not exist; nothing to parse"],
+  "sessionTotals": { "inputTokens": null, "outputTokens": null, "cost": null, "currency": null },
+  "findings": [],
+  "proposals": [],
+  "methodology": "Analysis could not proceed - the target transcript was unreadable."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-missing-field",
+  "coverageGaps": [],
+  "sessionTotals": { "inputTokens": 9000, "outputTokens": 500, "cost": null, "currency": null },
+  "findings": [],
+  "proposals": []
+}

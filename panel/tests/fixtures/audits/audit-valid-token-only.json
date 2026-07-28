@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "auditId": "aud_01j9z4m8r2n3p4q5",
+  "coverageGaps": [
+    "no pricing source was available in the environment or supplied by the user; every cost figure below is null rather than guessed"
+  ],
+  "sessionTotals": { "inputTokens": 58000, "outputTokens": 4100, "cost": null, "currency": null },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "large_tool_result",
+      "title": "Full transcript dumped into context instead of a filtered read",
+      "severity": "medium",
+      "confidence": "high",
+      "summary": "One tool call returned 8,400 lines where a grep would have returned 40.",
+      "observedImpact": { "inputTokens": 21000, "outputTokens": 0, "cost": null },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 15000, "likely": 19000, "maximum": 21000 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-1"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": ["proposal-1"]
+    }
+  ],
+  "proposals": [
+    {
+      "id": "proposal-1",
+      "type": "skill",
+      "title": "Encode the filtered-read pattern as a skill",
+      "wastePrevented": ["finding-1"],
+      "expectedSavings": {
+        "inputTokens": { "minimum": 15000, "likely": 19000, "maximum": 21000 },
+        "cost": null
+      },
+      "maintenanceCost": "low",
+      "implementationRisk": "low",
+      "filesLikelyAffected": ["skills/filtered-read/SKILL.md"],
+      "validationPlan": [],
+      "automaticApplicationAllowed": false
+    }
+  ],
+  "methodology": "Token counts summed directly from the transcript's usage objects. No pricing source was available, so no dollar figures are reported anywhere in this audit."
+}

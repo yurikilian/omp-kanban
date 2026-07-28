@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "auditId": "aud_shared_evidence",
+  "coverageGaps": [],
+  "sessionTotals": { "inputTokens": 94000, "outputTokens": 0, "cost": null, "currency": null },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "redundant_context",
+      "title": "DESIGN-SYSTEM.md re-read by every UI agent",
+      "severity": "high",
+      "confidence": "high",
+      "summary": "Five UI agents each re-read the same 1,800-line design doc in full.",
+      "observedImpact": { "inputTokens": 60000, "outputTokens": 0, "cost": null },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 40000, "likely": 48000, "maximum": 60000 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-shared"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": ["proposal-1"]
+    },
+    {
+      "id": "finding-2",
+      "category": "wide_fanout",
+      "title": "Five UI agents fanned out where two would do",
+      "severity": "medium",
+      "confidence": "medium",
+      "summary": "The same design-doc read dominates cost across an unnecessarily wide fan-out; narrowing width also narrows this re-read.",
+      "observedImpact": { "inputTokens": 60000, "outputTokens": 0, "cost": null },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 24000, "likely": 36000, "maximum": 48000 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-shared"],
+      "causalChain": [],
+      "limitations": ["shares its evidence and input-token basis with finding-1; do not sum the two savings ranges"],
+      "proposalIds": ["proposal-2"]
+    }
+  ],
+  "proposals": [
+    {
+      "id": "proposal-1",
+      "type": "hook",
+      "title": "Cache DESIGN-SYSTEM.md as one shared read",
+      "wastePrevented": ["finding-1"],
+      "expectedSavings": {
+        "inputTokens": { "minimum": 40000, "likely": 48000, "maximum": 60000 },
+        "cost": null
+      },
+      "maintenanceCost": "medium",
+      "implementationRisk": "low",
+      "filesLikelyAffected": [],
+      "validationPlan": [],
+      "automaticApplicationAllowed": false
+    },
+    {
+      "id": "proposal-2",
+      "type": "agent",
+      "title": "Narrow the UI fan-out from five agents to two",
+      "wastePrevented": ["finding-2"],
+      "expectedSavings": {
+        "inputTokens": { "minimum": 24000, "likely": 36000, "maximum": 48000 },
+        "cost": null
+      },
+      "maintenanceCost": "medium",
+      "implementationRisk": "medium",
+      "filesLikelyAffected": [],
+      "validationPlan": [],
+      "automaticApplicationAllowed": false
+    }
+  ],
+  "methodology": "sessionTotals.inputTokens is the session's real total input-token count, read once from the transcript. It is not the sum of the two findings' estimatedSavings, which both cite evidence-shared and would double-count that read if added together."
+}

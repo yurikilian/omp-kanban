@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-incomplete",
+  "coverageGaps": [],
+  "sessionTotals": { "inputTokens": 50000, "outputTokens": 3000, "cost": null, "currency": null },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "repeated_context_loading",
+      "title": "This finding must never surface as final while the bundle is incomplete",
+      "severity": "high",
+      "confidence": "high",
+      "summary": "audit.json alone finished writing before report.md and evidence.jsonl did.",
+      "observedImpact": { "inputTokens": 40000, "outputTokens": 0, "cost": null },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 20000, "likely": 30000, "maximum": 35000 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-1"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": []
+    }
+  ],
+  "proposals": [],
+  "methodology": "Token counts read directly from the transcript's recorded usage objects."
+}

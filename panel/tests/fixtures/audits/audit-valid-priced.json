@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "auditId": "aud_01j9z3k2q4x5y6z7",
+  "coverageGaps": [
+    "cache read/write fields were absent in this session's transcript version, so cache efficiency is unmeasured"
+  ],
+  "sessionTotals": {
+    "inputTokens": 210000,
+    "outputTokens": 18500,
+    "cost": 4.62,
+    "currency": "USD"
+  },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "redundant_context",
+      "title": "Repeated repository context loading",
+      "severity": "high",
+      "confidence": "high",
+      "summary": "Three agents loaded substantially overlapping files across the session.",
+      "observedImpact": { "inputTokens": 94000, "outputTokens": 0, "cost": 1.88 },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 38000, "likely": 61000, "maximum": 76000 },
+        "cost": { "minimum": 0.76, "likely": 1.22, "maximum": 1.52 }
+      },
+      "evidenceIds": ["evidence-1", "evidence-2"],
+      "causalChain": ["kb-scout re-read src/ on every turn instead of once"],
+      "limitations": ["savings estimate assumes the same file set recurs in future sessions"],
+      "proposalIds": ["proposal-1"]
+    },
+    {
+      "id": "finding-2",
+      "category": "role_misassignment",
+      "title": "Mechanical fan-out running on a reasoning-tier model",
+      "severity": "medium",
+      "confidence": "medium",
+      "summary": "Four smol-shaped subagents ran on @slow instead of @smol.",
+      "observedImpact": { "inputTokens": 42000, "outputTokens": 6100, "cost": 1.35 },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 20000, "likely": 30000, "maximum": 42000 },
+        "outputTokens": { "minimum": 3000, "likely": 4500, "maximum": 6100 },
+        "cost": { "minimum": 0.65, "likely": 0.98, "maximum": 1.35 }
+      },
+      "evidenceIds": ["evidence-3"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": ["proposal-2"]
+    }
+  ],
+  "proposals": [
+    {
+      "id": "proposal-1",
+      "type": "hook",
+      "title": "Reuse a shared repository context artifact",
+      "wastePrevented": ["finding-1"],
+      "expectedSavings": {
+        "inputTokens": { "minimum": 38000, "likely": 61000, "maximum": 76000 },
+        "cost": { "minimum": 0.76, "likely": 1.22, "maximum": 1.52 }
+      },
+      "maintenanceCost": "medium",
+      "implementationRisk": "low",
+      "filesLikelyAffected": ["hooks/pre/session_start.ts"],
+      "validationPlan": ["run the next kanban cycle and diff repeated-file-read counts"],
+      "automaticApplicationAllowed": false
+    },
+    {
+      "id": "proposal-2",
+      "type": "agent",
+      "title": "Pin the fan-out worker's model role to smol",
+      "wastePrevented": ["finding-2"],
+      "expectedSavings": {
+        "inputTokens": { "minimum": 20000, "likely": 30000, "maximum": 42000 },
+        "outputTokens": { "minimum": 3000, "likely": 4500, "maximum": 6100 },
+        "cost": { "minimum": 0.65, "likely": 0.98, "maximum": 1.35 }
+      },
+      "maintenanceCost": "low",
+      "implementationRisk": "low",
+      "filesLikelyAffected": ["agents/kb-scout.md"],
+      "validationPlan": ["re-run the audit after the change and confirm role resolves to smol"],
+      "automaticApplicationAllowed": false
+    }
+  ],
+  "methodology": "Token counts summed directly from each transcript's usage objects; dollar costs computed against the user-supplied Anthropic price sheet for the models the session actually used."
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "auditId": "aud_invalid_guessed_cost",
+  "coverageGaps": ["no pricing source was available in the environment or supplied by the user"],
+  "sessionTotals": { "inputTokens": 58000, "outputTokens": 4100, "cost": null, "currency": null },
+  "findings": [
+    {
+      "id": "finding-1",
+      "category": "large_tool_result",
+      "title": "Full transcript dumped into context instead of a filtered read",
+      "severity": "medium",
+      "confidence": "high",
+      "summary": "One tool call returned 8,400 lines where a grep would have returned 40.",
+      "observedImpact": { "inputTokens": 21000, "outputTokens": 0, "cost": 0.42 },
+      "estimatedSavings": {
+        "inputTokens": { "minimum": 15000, "likely": 19000, "maximum": 21000 },
+        "cost": null
+      },
+      "evidenceIds": ["evidence-1"],
+      "causalChain": [],
+      "limitations": [],
+      "proposalIds": []
+    }
+  ],
+  "proposals": [],
+  "methodology": "Token counts summed directly from the transcript's usage objects."
+}

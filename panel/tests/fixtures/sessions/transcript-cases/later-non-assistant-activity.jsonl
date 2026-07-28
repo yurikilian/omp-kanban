@@ -1,0 +1,4 @@
+{"type":"title","title":"Later activity from a tool call","updatedAt":"2026-02-04T00:00:00.100Z"}
+{"type":"session","version":3,"id":"tc-later","timestamp":"2026-02-04T00:00:00.000Z","cwd":"/work/tc"}
+{"type":"message","id":"a1","parentId":null,"timestamp":"2026-02-04T00:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Kicking off a tool call."}],"usage":{"input":20,"output":4,"cost":{"total":0.0002}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"tc1","toolName":"bash","startedAt":"2026-02-04T00:05:00.000Z","intent":"a long-running command"},"id":"c1","parentId":"a1","timestamp":"2026-02-04T00:05:00.000Z"}

@@ -1,0 +1,6 @@
+{"type":"title","title":"Worker","updatedAt":"2026-01-01T10:02:30.000Z"}
+{"type":"session","version":3,"id":"worker-sub","timestamp":"2026-01-01T10:02:30.000Z","cwd":"/work/alpha"}
+{"type":"message","id":"w1","parentId":null,"timestamp":"2026-01-01T10:03:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Working."}],"model":"claude-sonnet-5","usage":{"input":800,"output":150,"cost":{"total":0.008}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"w-t1","toolName":"bash","startedAt":"2026-01-01T10:04:00.000Z","intent":"Run migration part 1"},"id":"wc1","parentId":"w1","timestamp":"2026-01-01T10:04:00.000Z"}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"w-t2","toolName":"bash","startedAt":"2026-01-01T10:06:00.000Z","intent":"Run migration part 2"},"id":"wc2","parentId":"w1","timestamp":"2026-01-01T10:06:00.000Z"}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"w-t3","toolName":"bash","startedAt":"2026-01-01T10:07:00.000Z","intent":"Verify migration"},"id":"wc3","parentId":"wc2","timestamp":"2026-01-01T10:07:00.000Z"}

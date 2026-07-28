@@ -1,0 +1,5 @@
+{"type":"title","title":"Coordinate parallel migration","updatedAt":"2026-01-01T10:00:00.100Z"}
+{"type":"session","version":3,"id":"00000000-0000-7000-8000-00000000000b","timestamp":"2026-01-01T10:00:00.000Z","cwd":"/work/alpha"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T10:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Spawning workers."}],"model":"claude-sonnet-5","usage":{"input":2000,"output":400,"cost":{"total":0.02}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"t1","toolName":"task","startedAt":"2026-01-01T10:02:00.000Z","intent":"Spawn Worker and Helper"},"id":"c1","parentId":"m1","timestamp":"2026-01-01T10:02:00.000Z"}
+{"type":"message","id":"m2","parentId":"c1","timestamp":"2026-01-01T10:05:00.000Z","message":{"role":"toolResult","content":[{"type":"text","text":"Both sub-agents finished."}],"toolCallId":"t1","toolName":"task"}}

@@ -1,0 +1,4 @@
+{"type":"title","title":"Malformed trailing line","updatedAt":"2026-02-03T00:00:00.100Z"}
+{"type":"session","version":3,"id":"tc-malformed","timestamp":"2026-02-03T00:00:00.000Z","cwd":"/work/tc"}
+{"type":"message","id":"a1","parentId":null,"timestamp":"2026-02-03T00:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Complete entry."}],"usage":{"input":10,"output":2,"cost":{"total":0.0001}}}}
+{"type":"message","id":"a2","parentId":"a1","timestamp":"2026-02-03T00:02:00.000

@@ -1,0 +1,4 @@
+{"type":"title","title":"Investigate flaky test","updatedAt":"2026-01-02T08:00:00.100Z"}
+{"type":"session","version":3,"id":"00000000-0000-7000-8000-00000000000c","timestamp":"2026-01-02T08:00:00.000Z","cwd":"/work/beta"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-02T08:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Why is this test flaky?"}]}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-01-02T08:02:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Investigating, one moment."}],"model":"claude-sonnet-5"}}

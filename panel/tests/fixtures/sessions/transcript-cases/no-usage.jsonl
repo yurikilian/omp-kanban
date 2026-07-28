@@ -1,0 +1,4 @@
+{"type":"title","title":"No usage recorded","updatedAt":"2026-02-02T00:00:00.100Z"}
+{"type":"session","version":3,"id":"tc-no-usage","timestamp":"2026-02-02T00:00:00.000Z","cwd":"/work/tc"}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"tc1","toolName":"bash","startedAt":"2026-02-02T00:00:30.000Z","intent":"probe"},"id":"c1","parentId":null,"timestamp":"2026-02-02T00:00:30.000Z"}
+{"type":"message","id":"a1","parentId":"c1","timestamp":"2026-02-02T00:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"No usage field on this turn."}]}}

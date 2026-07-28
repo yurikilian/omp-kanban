@@ -1,0 +1,6 @@
+{"type":"title","title":"Refactor billing module","updatedAt":"2026-01-01T09:00:00.100Z"}
+{"type":"session","version":3,"id":"00000000-0000-7000-8000-00000000000a","timestamp":"2026-01-01T09:00:00.000Z","cwd":"/work/alpha"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T09:02:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Please refactor the billing module."}]}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-01-01T09:05:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sure, starting now."}],"model":"claude-sonnet-5","usage":{"input":1000,"output":200,"cost":{"total":0.01}}}}
+{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"t1","toolName":"bash","startedAt":"2026-01-01T09:06:00.000Z","intent":"Run tests"},"id":"c1","parentId":"m2","timestamp":"2026-01-01T09:06:00.000Z"}
+{"type":"message","id":"m3","parentId":"c1","timestamp":"2026-01-01T09:10:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"model":"claude-sonnet-5","usage":{"input":500,"output":100,"cost":{"total":0.005}}}}

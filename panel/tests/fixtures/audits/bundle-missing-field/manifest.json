@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-missing-field",
+  "status": "completed",
+  "target": {
+    "sessionId": "2026-07-22T11-00-00-bbbb2222",
+    "project": "omp-kanban",
+    "transcriptPath": "~/.omp/agent/sessions/omp-kanban/2026-07-22T11-00-00-bbbb2222.jsonl"
+  },
+  "fingerprint": "sha256:bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888cccc9999",
+  "analyzer": { "name": "kb-forensics", "version": "1.0" },
+  "createdAt": "2026-07-22T11:03:00Z",
+  "startedAt": "2026-07-22T11:03:02Z",
+  "completedAt": "2026-07-22T11:04:10Z",
+  "artifacts": {
+    "manifest": "manifest.json",
+    "audit": "audit.json",
+    "report": "report.md",
+    "evidence": "evidence.jsonl"
+  }
+}

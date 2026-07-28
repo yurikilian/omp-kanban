@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "auditId": "bundle-wrong-type",
+  "coverageGaps": [],
+  "sessionTotals": { "inputTokens": "12000", "outputTokens": 900, "cost": null, "currency": null },
+  "findings": [],
+  "proposals": [],
+  "methodology": "Token counts read directly from the transcript's recorded usage objects."
+}

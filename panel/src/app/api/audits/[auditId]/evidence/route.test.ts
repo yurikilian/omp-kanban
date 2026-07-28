@@ -67,6 +67,15 @@ describe("GET /api/audits/[auditId]/evidence", () => {
     expect(response.status).toBe(404);
   });
 
+  it("does not choose among duplicate evidence records (E4-S9-AC1)", async () => {
+    const evidence = JSON.parse(await fs.readFile(evidenceFilePath, "utf8")) as Record<string, unknown>;
+    await fs.appendFile(evidenceFilePath, `${JSON.stringify({ ...evidence, eventRef: "main:other-event" })}\n`, "utf8");
+
+    const response = await resolveEvidence("evidence-1");
+
+    expect(response.status).toBe(404);
+  });
+
   it("does not redirect cited evidence to a session outside the audit target (E4-S9-AC1)", async () => {
     const evidence = JSON.parse(await fs.readFile(evidenceFilePath, "utf8")) as Record<string, unknown>;
     await fs.writeFile(evidenceFilePath, `${JSON.stringify({ ...evidence, sessionId: "unrelated-session" })}\n`, "utf8");

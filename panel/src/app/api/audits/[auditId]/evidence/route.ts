@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { sessionAgentUrl } from "@/lib/session-url";
+import type { EvidenceRecord } from "@/server/audits/bundle-schema";
 import { validateAuditBundle } from "@/server/audits/validate";
 import { isSafeSessionId } from "@/server/sessions/detail";
 
@@ -39,7 +40,12 @@ export async function GET(request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "Evidence not found" }, { status: 404 });
     }
 
-    const evidence = validation.evidence.find((record) => record.id === evidenceId);
+    let evidence: EvidenceRecord | undefined;
+    for (const record of validation.evidence) {
+      if (record.id !== evidenceId) continue;
+      if (evidence !== undefined) return NextResponse.json({ error: "Evidence not found" }, { status: 404 });
+      evidence = record;
+    }
     const isCitedByFinding = validation.audit.findings.some((finding) => finding.evidenceIds.includes(evidenceId));
     if (
       !evidence ||

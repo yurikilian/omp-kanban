@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { DelegationEvent } from "@/components/events/delegation-event";
 import { ErrorEvent } from "@/components/events/error-event";
@@ -9,6 +9,7 @@ import { ResponseEvent } from "@/components/events/response-event";
 import { StatusEvent } from "@/components/events/status-event";
 import { ToolCallEvent } from "@/components/events/tool-call-event";
 import { useWindowedEvents } from "@/hooks/use-windowed-events";
+import { useTimelineKeyboard } from "@/hooks/use-timeline-keyboard";
 import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionEventUrl } from "@/lib/session-url";
 import { MissingEventNotice } from "./missing-event-notice";
 import { ReturnToLive } from "./return-to-live";
@@ -134,6 +135,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
     return agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent"));
   });
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +193,44 @@ export function EventStream({ sessionId }: EventStreamProps) {
     [selectedEventId, visibleEvents],
   );
 
+  const selectEvent = useCallback(
+    (eventId: string) => {
+      setSelectedEventId(eventId);
+      window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, eventId, selectedAgentId));
+    },
+    [sessionId, selectedAgentId],
+  );
+
+  const clearSelectedEvent = useCallback(() => {
+    setSelectedEventId(undefined);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("event");
+    const query = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
+
+  const toggleExpanded = useCallback((eventId: string) => {
+    setExpandedEventIds((current) => {
+      const next = new Set(current);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Only the ids in view can ever be a valid keyboard cursor position - the
+  // hook itself drops the cursor if the agent-branch filter narrows past it.
+  const eventIds = useMemo(() => visibleEvents.map((event) => event.id), [visibleEvents]);
+  const { focusedEventId, containerKeyDownProps } = useTimelineKeyboard({
+    eventIds,
+    onExpand: toggleExpanded,
+    onOpenInspector: selectEvent,
+    onClear: clearSelectedEvent,
+  });
+
   useEffect(() => {
     if (state.status !== "ready" || !selectedEvent) return;
 
@@ -213,6 +253,30 @@ export function EventStream({ sessionId }: EventStreamProps) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [containerRef, selectedEvent, state.status, visibleEvents]);
+
+  // The keyboard cursor can land on an event outside the virtualized
+  // window, same as a deep-linked selection above - bring it on-screen
+  // without stealing focus from the container the cursor actually lives on.
+  useEffect(() => {
+    if (focusedEventId === undefined) return;
+
+    const eventElementId = `session-event-${focusedEventId}`;
+    const focusedElement = document.getElementById(eventElementId);
+    if (focusedElement) {
+      focusedElement.scrollIntoView({ block: "nearest" });
+      return;
+    }
+
+    const eventIndex = eventIds.indexOf(focusedEventId);
+    const containerTop = containerRef.current?.getBoundingClientRect().top;
+    if (eventIndex < 0 || containerTop === undefined) return;
+
+    window.scrollTo({ top: Math.max(0, containerTop + window.scrollY + eventIndex * 88 - window.innerHeight / 2) });
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(eventElementId)?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [containerRef, eventIds, focusedEventId]);
 
   if (state.status === "loading") {
     return <p className="text-sm text-muted-foreground">Loading timeline…</p>;
@@ -241,7 +305,14 @@ export function EventStream({ sessionId }: EventStreamProps) {
         </aside>
       )}
       <ReturnToLive isVisible={!isFollowing} onReturn={returnToLive} />
-      <div data-slot="event-stream" ref={containerRef} style={{ position: "relative", height: totalSize }}>
+      <div
+        data-slot="event-stream"
+        ref={containerRef}
+        tabIndex={0}
+        aria-label="Session event timeline"
+        style={{ position: "relative", height: totalSize }}
+        {...containerKeyDownProps}
+      >
         {items.map(({ event, virtualItem }) => (
           <div
             key={event.id}
@@ -250,19 +321,23 @@ export function EventStream({ sessionId }: EventStreamProps) {
             data-index={virtualItem.index}
             ref={measureElement}
             className="cursor-pointer pb-1"
-            style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualItem.start}px)` }}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${virtualItem.start}px)`,
+              ...(focusedEventId === event.id ? { outline: "2px solid #3b82f6", outlineOffset: "-2px" } : {}),
+            }}
             role="button"
             tabIndex={0}
             aria-pressed={selectedEventId === event.id}
-            onClick={() => {
-              setSelectedEventId(event.id);
-              window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id, selectedAgentId));
-            }}
+            aria-expanded={expandedEventIds.has(event.id)}
+            onClick={() => selectEvent(event.id)}
             onKeyDown={(keyboardEvent) => {
               if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
                 keyboardEvent.preventDefault();
-                setSelectedEventId(event.id);
-                window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id, selectedAgentId));
+                selectEvent(event.id);
               }
             }}
           >

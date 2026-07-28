@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AgentTree } from "@/components/agents/agent-tree";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { EventStream } from "./event-stream";
@@ -53,6 +54,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
         toolCallCount={liveSession.toolCallCount}
       />
       <EventStream sessionId={liveSession.id} />
+      <AgentTree sessionId={liveSession.id} />
     </section>
   );
 }

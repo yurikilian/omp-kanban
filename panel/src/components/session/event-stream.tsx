@@ -9,7 +9,7 @@ import { ResponseEvent } from "@/components/events/response-event";
 import { StatusEvent } from "@/components/events/status-event";
 import { ToolCallEvent } from "@/components/events/tool-call-event";
 import { useWindowedEvents } from "@/hooks/use-windowed-events";
-import { sessionEventUrl, eventIdFromSearchParam } from "@/lib/session-url";
+import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionEventUrl } from "@/lib/session-url";
 import { MissingEventNotice } from "./missing-event-notice";
 import type { TimelineEvent } from "@/server/sessions/timeline";
 
@@ -89,6 +89,29 @@ function eventInspectorText(event: TimelineEvent): string {
   }
 }
 
+function eventsForAgentBranch(events: TimelineEvent[], agentId: string | undefined): TimelineEvent[] {
+  if (!agentId) return events;
+
+  const branch = new Set([agentId]);
+  for (const event of events) {
+    if (event.type === "delegation" && branch.has(event.parentAgent)) branch.add(event.childAgent);
+  }
+
+  return events.filter((event) => {
+    switch (event.type) {
+      case "response":
+      case "tool_call":
+      case "error":
+        return branch.has(event.agent);
+      case "delegation":
+        return branch.has(event.parentAgent) || branch.has(event.childAgent);
+      case "prompt":
+      case "status":
+        return false;
+    }
+  });
+}
+
 /**
  * Loads and renders one session's merged main and sub-agent timeline.
  * Fetches its own data (rather than receiving it as a prop) because the
@@ -101,6 +124,10 @@ export function EventStream({ sessionId }: EventStreamProps) {
   const [selectedEventId, setSelectedEventId] = useState<string | undefined>(() => {
     if (typeof window === "undefined") return undefined;
     return eventIdFromSearchParam(new URLSearchParams(window.location.search).get("event"));
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent"));
   });
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
@@ -125,13 +152,27 @@ export function EventStream({ sessionId }: EventStreamProps) {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    const updateSelection = () => {
+      setSelectedAgentId(agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent")));
+    };
+
+    window.addEventListener("popstate", updateSelection);
+    window.addEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    return () => {
+      window.removeEventListener("popstate", updateSelection);
+      window.removeEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    };
+  }, []);
+
   // Windowing needs an events array on every render regardless of load
   // state, so hooks stay unconditional; an empty array windows to nothing.
   const events = state.status === "ready" ? state.events : [];
-  const { containerRef, items, totalSize, measureElement } = useWindowedEvents(events);
+  const visibleEvents = useMemo(() => eventsForAgentBranch(events, selectedAgentId), [events, selectedAgentId]);
+  const { containerRef, items, totalSize, measureElement } = useWindowedEvents(visibleEvents);
   const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId),
-    [events, selectedEventId],
+    () => visibleEvents.find((event) => event.id === selectedEventId),
+    [selectedEventId, visibleEvents],
   );
 
   useEffect(() => {
@@ -144,7 +185,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
       return;
     }
 
-    const eventIndex = events.indexOf(selectedEvent);
+    const eventIndex = visibleEvents.indexOf(selectedEvent);
     const containerTop = containerRef.current?.getBoundingClientRect().top;
     if (eventIndex < 0 || containerTop === undefined) return;
 
@@ -155,7 +196,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
       document.getElementById(eventElementId)?.scrollIntoView({ block: "center" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [containerRef, events, selectedEvent, state.status]);
+  }, [containerRef, selectedEvent, state.status, visibleEvents]);
 
   if (state.status === "loading") {
     return <p className="text-sm text-muted-foreground">Loading timeline…</p>;
@@ -163,7 +204,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
   if (state.status === "error") {
     return <p className="text-sm text-muted-foreground">Failed to load the session timeline.</p>;
   }
-  if (events.length === 0) {
+  if (visibleEvents.length === 0) {
     return (
       <>
         {selectedEventId && <MissingEventNotice eventId={selectedEventId} />}
@@ -198,13 +239,13 @@ export function EventStream({ sessionId }: EventStreamProps) {
             aria-pressed={selectedEventId === event.id}
             onClick={() => {
               setSelectedEventId(event.id);
-              window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id));
+              window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id, selectedAgentId));
             }}
             onKeyDown={(keyboardEvent) => {
               if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
                 keyboardEvent.preventDefault();
                 setSelectedEventId(event.id);
-                window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id));
+                window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, event.id, selectedAgentId));
               }
             }}
           >

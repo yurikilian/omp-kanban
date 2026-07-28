@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AuditPanel } from "@/components/audit/audit-panel";
 import type { AuditReport } from "@/server/audits/bundle-schema";
 import { GenerateAuditButton } from "@/components/audit/generate-audit-button";
-import { AgentTree } from "@/components/agents/agent-tree";
+import { subscribeToAuditChanges } from "@/lib/live-stream";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
+import { AgentTree } from "@/components/agents/agent-tree";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { EventStream } from "./event-stream";
 import { MetricStrip } from "./metric-strip";
@@ -45,7 +46,35 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
     [session.id],
   );
 
+  const refreshAudit = useCallback(
+    async (sessionId: string) => {
+      if (sessionId !== session.id) return;
+
+      try {
+        const response = await fetch(`/api/audits?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        if (!response.ok) return;
+
+        const audit = (await response.json()) as AuditReport | null;
+        if (audit) setLiveAudit(audit);
+      } catch {
+        return;
+      }
+    },
+    [session.id],
+  );
+
   useLiveSessions(refreshSession);
+
+  // Subscribe to audit changes from the stream
+  useEffect(() => {
+    const unsubscribe = subscribeToAuditChanges(({ sessionId, status }) => {
+      if (sessionId !== session.id) return;
+      // When audit status changes, refresh the audit data
+      refreshAudit(sessionId);
+    });
+
+    return unsubscribe;
+  }, [session.id, refreshAudit]);
 
   return (
     <section role="region" aria-label="Session detail" className="space-y-2">

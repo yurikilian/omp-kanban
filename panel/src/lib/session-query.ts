@@ -74,3 +74,24 @@ function sessionMatchesQuery(session: SessionSummary, needle: string): boolean {
     session.id.toLowerCase().includes(needle)
   );
 }
+
+/**
+ * Splits sessions into a pinned group and an unpinned group, each keeping
+ * the input's relative order (the active sort). Pinning therefore only ever
+ * moves a row between groups, never reorders it within one - unpinning
+ * lands it back at its sorted position among the unpinned rows (E3-S4-AC1,
+ * E3-S4-AC3).
+ */
+export function partitionPinned(
+  sessions: SessionSummary[],
+  pinnedSessionIds: ReadonlySet<string>,
+): { pinned: SessionSummary[]; unpinned: SessionSummary[] } {
+  const pinned: SessionSummary[] = [];
+  const unpinned: SessionSummary[] = [];
+
+  for (const session of sessions) {
+    (pinnedSessionIds.has(session.id) ? pinned : unpinned).push(session);
+  }
+
+  return { pinned, unpinned };
+}

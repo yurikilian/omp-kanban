@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
+import { partitionPinned, sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
 import "@/styles/table.css";
 import type { SessionSummary } from "@/server/sessions/types";
+import { PinControl } from "./pin-control";
 import { SessionSort } from "./session-sort";
 
 interface SessionListProps {
@@ -119,10 +120,103 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
 
   useLiveSessions(refreshSession);
 
+  const [pinnedSessionIds, setPinnedSessionIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/prefs/pins", { cache: "no-store" });
+        const data = response?.ok
+          ? ((await response.json()) as { pinnedSessionIds?: string[] })
+          : { pinnedSessionIds: [] };
+        if (!cancelled) setPinnedSessionIds(new Set(data.pinnedSessionIds ?? []));
+      } catch {
+        if (!cancelled) setPinnedSessionIds(new Set());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Pinning survives a reload and a runtime restart because it is persisted
+  // server-side (see pin-store.ts); this optimistic update just avoids
+  // waiting on the round-trip before the row visibly moves groups
+  // (E3-S4-AC1, E3-S4-AC3), and rolls back if the request fails.
+  const togglePin = useCallback(
+    (sessionId: string) => {
+      const wasPinned = pinnedSessionIds.has(sessionId);
+      const nextPinned = !wasPinned;
+
+      setPinnedSessionIds((current) => {
+        const next = new Set(current);
+        if (nextPinned) next.add(sessionId);
+        else next.delete(sessionId);
+        return next;
+      });
+
+      void (async () => {
+        try {
+          const response = await fetch("/api/prefs/pins", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, pinned: nextPinned }),
+          });
+          if (!response?.ok) throw new Error("Failed to update the pinned session");
+
+          const data = (await response.json()) as { pinnedSessionIds: string[] };
+          setPinnedSessionIds(new Set(data.pinnedSessionIds));
+        } catch {
+          setPinnedSessionIds((current) => {
+            const reverted = new Set(current);
+            if (wasPinned) reverted.add(sessionId);
+            else reverted.delete(sessionId);
+            return reverted;
+          });
+        }
+      })();
+    },
+    [pinnedSessionIds],
+  );
+
   const ordered =
     activeSort.key === "lastActivity" && activeSort.direction === "descending"
       ? liveSessions
       : sortSessions(liveSessions, activeSort);
+
+  const { pinned, unpinned } = partitionPinned(ordered, pinnedSessionIds);
+
+  const renderRow = (session: SessionSummary) => (
+    <tr key={session.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+      <td className="px-3 py-2">{session.title}</td>
+      <td className="px-3 py-2 text-muted-foreground">{session.project}</td>
+      <td className="px-3 py-2 text-muted-foreground">
+        <time dateTime={session.lastActivityAt}>{formatLastActivity(session.lastActivityAt)}</time>
+      </td>
+      <td className="session-list__numeric px-3 py-2">{formatDuration(session.durationMs)}</td>
+      <td className="session-list__numeric px-3 py-2">
+        <MetricCell value={session.costUsd} format={formatCost} />
+      </td>
+      <td className="session-list__numeric px-3 py-2">
+        <MetricCell value={session.inputTokens} format={formatTokenCount} />
+      </td>
+      <td className="session-list__numeric px-3 py-2">
+        <MetricCell value={session.outputTokens} format={formatTokenCount} />
+      </td>
+      <td className="session-list__numeric px-3 py-2">{session.agentCount.toLocaleString("en-US")}</td>
+      <td className="session-list__numeric px-3 py-2">{session.toolCallCount.toLocaleString("en-US")}</td>
+      <td className="px-3 py-2 text-right">
+        <PinControl
+          pinned={pinnedSessionIds.has(session.id)}
+          sessionTitle={session.title}
+          onToggle={() => togglePin(session.id)}
+        />
+      </td>
+    </tr>
+  );
 
   return (
     <>
@@ -158,30 +252,21 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
           <th scope="col" className="session-list__numeric px-3 py-2 font-medium">
             Tool calls
           </th>
+          <th scope="col" className="px-3 py-2 text-right font-medium">
+            <span className="sr-only">Pin</span>
+          </th>
         </tr>
       </thead>
       <tbody>
-        {ordered.map((session) => (
-          <tr key={session.id} className="border-b border-border last:border-0 hover:bg-muted/50">
-            <td className="px-3 py-2">{session.title}</td>
-            <td className="px-3 py-2 text-muted-foreground">{session.project}</td>
-            <td className="px-3 py-2 text-muted-foreground">
-              <time dateTime={session.lastActivityAt}>{formatLastActivity(session.lastActivityAt)}</time>
-            </td>
-            <td className="session-list__numeric px-3 py-2">{formatDuration(session.durationMs)}</td>
-            <td className="session-list__numeric px-3 py-2">
-              <MetricCell value={session.costUsd} format={formatCost} />
-            </td>
-            <td className="session-list__numeric px-3 py-2">
-              <MetricCell value={session.inputTokens} format={formatTokenCount} />
-            </td>
-            <td className="session-list__numeric px-3 py-2">
-              <MetricCell value={session.outputTokens} format={formatTokenCount} />
-            </td>
-            <td className="session-list__numeric px-3 py-2">{session.agentCount.toLocaleString("en-US")}</td>
-            <td className="session-list__numeric px-3 py-2">{session.toolCallCount.toLocaleString("en-US")}</td>
+        {pinned.length > 0 && (
+          <tr className="border-b border-border">
+            <th scope="rowgroup" colSpan={10} className="bg-muted/50 px-3 py-1 text-left text-xs font-medium text-muted-foreground">
+              Pinned
+            </th>
           </tr>
-        ))}
+        )}
+        {pinned.map(renderRow)}
+        {unpinned.map(renderRow)}
       </tbody>
       </table>
     </>

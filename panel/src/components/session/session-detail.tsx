@@ -1,3 +1,4 @@
+import { AgentTree } from "@/components/agents/agent-tree";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { EventStream } from "./event-stream";
 import { MetricStrip } from "./metric-strip";
@@ -24,6 +25,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
         toolCallCount={session.toolCallCount}
       />
       <EventStream sessionId={session.id} />
+      <AgentTree sessionId={session.id} />
     </section>
   );
 }

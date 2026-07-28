@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { DelegationEvent } from "@/components/events/delegation-event";
 import { ErrorEvent } from "@/components/events/error-event";
 import { PromptEvent } from "@/components/events/prompt-event";
 import { ResponseEvent } from "@/components/events/response-event";
 import { StatusEvent } from "@/components/events/status-event";
 import { ToolCallEvent } from "@/components/events/tool-call-event";
+import { useWindowedEvents } from "@/hooks/use-windowed-events";
 import type { TimelineEvent } from "@/server/sessions/timeline";
 
 export interface EventStreamProps {
@@ -103,19 +104,34 @@ export function EventStream({ sessionId }: EventStreamProps) {
     };
   }, [sessionId]);
 
+  // Windowing needs an events array on every render regardless of load
+  // state, so hooks stay unconditional; an empty array windows to nothing.
+  const events = state.status === "ready" ? state.events : [];
+  const { containerRef, items, totalSize, measureElement } = useWindowedEvents(events);
+
   if (state.status === "loading") {
     return <p className="text-sm text-muted-foreground">Loading timeline…</p>;
   }
   if (state.status === "error") {
     return <p className="text-sm text-muted-foreground">Failed to load the session timeline.</p>;
   }
-  if (state.events.length === 0) {
+  if (events.length === 0) {
     return <p className="text-sm text-muted-foreground">No events recorded for this session.</p>;
   }
 
   return (
-    <div data-slot="event-stream" className="flex flex-col gap-1">
-      {state.events.map(renderEvent)}
+    <div data-slot="event-stream" ref={containerRef} style={{ position: "relative", height: totalSize }}>
+      {items.map(({ event, virtualItem }) => (
+        <div
+          key={event.id}
+          data-index={virtualItem.index}
+          ref={measureElement}
+          className="pb-1"
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualItem.start}px)` }}
+        >
+          {renderEvent(event)}
+        </div>
+      ))}
     </div>
   );
 }

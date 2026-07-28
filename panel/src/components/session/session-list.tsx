@@ -1,3 +1,7 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useLiveSessions } from "@/hooks/use-live-sessions";
 import type { SessionSummary } from "@/server/sessions/types";
 
 interface SessionListProps {
@@ -53,7 +57,29 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
  * set assembled from multiple sources (e.g. a future live update).
  */
 export function SessionList({ sessions }: SessionListProps) {
-  const ordered = [...sessions].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
+  const [liveSessions, setLiveSessions] = useState(sessions);
+
+  useEffect(() => {
+    setLiveSessions(sessions);
+  }, [sessions]);
+
+  const refreshSession = useCallback(async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+      if (!response.ok) return;
+
+      const updatedSession = (await response.json()) as SessionSummary;
+      setLiveSessions((currentSessions) =>
+        currentSessions.map((session) => (session.id === sessionId ? updatedSession : session)),
+      );
+    } catch {
+      return;
+    }
+  }, []);
+
+  useLiveSessions(refreshSession);
+
+  const ordered = [...liveSessions].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
 
   return (
     <table className="w-full border-collapse text-sm">

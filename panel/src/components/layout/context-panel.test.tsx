@@ -8,14 +8,17 @@ import { describe, expect, it } from "vitest";
 // panel/tests/css-canary.test.tsx.
 import "@/styles/shell.css";
 import { ContextPanel } from "@/components/layout/context-panel";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 import { CONTEXT_PANEL_DEFAULT_WIDTH, CONTEXT_PANEL_MAX_WIDTH, CONTEXT_PANEL_MIN_WIDTH } from "@/lib/panel-size";
 
 function renderShellBody() {
   return render(
-    <div className="app-shell__body">
-      <ContextPanel />
-      <main className="app-shell__main">Workspace</main>
-    </div>,
+    <PreferencesProvider>
+      <div className="app-shell__body">
+        <ContextPanel />
+        <main className="app-shell__main">Workspace</main>
+      </div>
+    </PreferencesProvider>,
   );
 }
 

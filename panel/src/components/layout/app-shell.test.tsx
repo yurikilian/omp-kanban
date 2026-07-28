@@ -7,13 +7,16 @@ import { describe, expect, it } from "vitest";
 // panel/tests/css-canary.test.tsx.
 import "@/styles/shell.css";
 import { AppShell } from "@/components/layout/app-shell";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 
 describe("AppShell (DESIGN-SYSTEM.md section 5)", () => {
   it("[E2-S2-AC1] renders the global bar and the application navigation around the given workspace content", () => {
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     expect(screen.getByText("OMP Panel")).toBeInTheDocument();

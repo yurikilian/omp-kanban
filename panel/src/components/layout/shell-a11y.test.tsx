@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // and panel/tests/css-canary.test.tsx.
 import "@/styles/shell.css";
 import { AppShell } from "@/components/layout/app-shell";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 import { NAV_AREAS } from "@/components/layout/app-nav";
 
 /**
@@ -74,9 +75,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
 
   it("[E2-S2-AC4] gives every global bar and navigation control an accessible name", () => {
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     expect(screen.getByRole("button", { name: "Switch to dark theme" })).toBeInTheDocument();
@@ -89,9 +92,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
 
   it("[E2-S2-AC4] shows a visible, non-default focus indicator on every global bar and navigation control", () => {
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     const controls = [
@@ -125,9 +130,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
   it("[E2-S2-AC4] reaches the global bar and every navigation control by tabbing in document order", async () => {
     const user = userEvent.setup();
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     await user.tab();
@@ -143,9 +150,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
 
   it("[E2-S2-AC4] exposes the navigation as a landmark with the current item programmatically marked current", () => {
     render(
-      <AppShell projectName="OMP Panel" current="observability">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="observability">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     const nav = screen.getByRole("navigation", { name: "Application" });
@@ -161,9 +170,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
   it("[E2-S2-AC6] applies no width transition to the navigation when reduced motion is preferred", () => {
     const media = stubMatchMedia(true);
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
     media.setMatches(true);
 
@@ -175,9 +186,11 @@ describe("Shell keyboard accessibility and reduced motion (DESIGN-SYSTEM.md sect
   it("[E2-S2-AC6] animates the navigation width transition when reduced motion is not preferred", () => {
     stubMatchMedia(false);
     render(
-      <AppShell projectName="OMP Panel" current="sessions">
-        <p>Workspace content</p>
-      </AppShell>,
+      <PreferencesProvider>
+        <AppShell projectName="OMP Panel" current="sessions">
+          <p>Workspace content</p>
+        </AppShell>
+      </PreferencesProvider>,
     );
 
     const nav = screen.getByRole("navigation", { name: "Application" });

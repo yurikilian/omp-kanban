@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 // rendered-geometry-tests skill and panel/tests/css-canary.test.tsx.
 import "@/styles/shell.css";
 import { GlobalBar } from "@/components/layout/global-bar";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 
 describe("GlobalBar (DESIGN-SYSTEM.md section 5.1)", () => {
   afterEach(() => {
@@ -16,7 +17,11 @@ describe("GlobalBar (DESIGN-SYSTEM.md section 5.1)", () => {
 
   it("[E2-S2-AC1] shows the project name and a theme switch that toggles the document theme", async () => {
     const user = userEvent.setup();
-    render(<GlobalBar projectName="OMP Panel" />);
+    render(
+      <PreferencesProvider>
+        <GlobalBar projectName="OMP Panel" />
+      </PreferencesProvider>,
+    );
 
     expect(screen.getByText("OMP Panel")).toBeInTheDocument();
 

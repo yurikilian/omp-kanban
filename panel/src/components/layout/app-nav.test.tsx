@@ -8,10 +8,15 @@ import { describe, expect, it } from "vitest";
 // the rendered-geometry-tests skill and panel/tests/css-canary.test.tsx.
 import "@/styles/shell.css";
 import { AppNav, NAV_AREAS } from "@/components/layout/app-nav";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 
 describe("AppNav (DESIGN-SYSTEM.md section 5.2)", () => {
   it("[E2-S2-AC1] lists Sessions, Agents, Observability, Audits and Configurations with Sessions marked current", () => {
-    render(<AppNav current="sessions" />);
+    render(
+      <PreferencesProvider>
+        <AppNav current="sessions" />
+      </PreferencesProvider>,
+    );
 
     expect(NAV_AREAS.map((area) => area.label)).toEqual([
       "Sessions",
@@ -34,7 +39,11 @@ describe("AppNav (DESIGN-SYSTEM.md section 5.2)", () => {
 
   it("[E2-S2-AC2] resolves computed width to 208px expanded and 64px collapsed, never auto", async () => {
     const user = userEvent.setup();
-    render(<AppNav current="sessions" />);
+    render(
+      <PreferencesProvider>
+        <AppNav current="sessions" />
+      </PreferencesProvider>,
+    );
 
     const nav = screen.getByRole("navigation", { name: /application/i });
 

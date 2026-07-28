@@ -4,6 +4,7 @@ import "../styles/typography.css";
 import "../styles/shell.css";
 import { codeFont, uiFont } from "./fonts";
 import { AppShell } from "@/components/layout/app-shell";
+import { PreferencesProvider } from "@/components/layout/preferences-provider";
 
 export const metadata: Metadata = {
   title: "OMP Panel",
@@ -25,9 +26,11 @@ export default function RootLayout({
          * the active pathname instead of this static default is future
          * work - see T15's known_gaps.
          */}
-        <AppShell projectName="OMP Panel" current="sessions">
-          {children}
-        </AppShell>
+        <PreferencesProvider>
+          <AppShell projectName="OMP Panel" current="sessions">
+            {children}
+          </AppShell>
+        </PreferencesProvider>
       </body>
     </html>
   );

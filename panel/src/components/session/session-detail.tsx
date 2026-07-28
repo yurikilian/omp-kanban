@@ -1,4 +1,5 @@
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
+import { EventStream } from "./event-stream";
 import { MetricStrip } from "./metric-strip";
 import { SessionHeader } from "./session-header";
 
@@ -22,6 +23,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
         agentCount={session.agentCount}
         toolCallCount={session.toolCallCount}
       />
+      <EventStream sessionId={session.id} />
     </section>
   );
 }

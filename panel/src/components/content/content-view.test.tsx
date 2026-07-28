@@ -23,7 +23,7 @@ describe("ContentView", () => {
     expect(container.textContent).toBe("gotcha");
   });
 
-  it("passes ordinary text through unchanged", () => {
+  it("passes ordinary prompt text through the reading column unchanged", () => {
     const { container } = render(<ContentView text="Please refactor the billing module." />);
 
     expect(container.textContent).toBe("Please refactor the billing module.");

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Bot,
@@ -39,12 +39,35 @@ export interface AppNavProps {
  * 208px expanded / 64px collapsed via src/styles/shell.css's
  * `[data-collapsed]` selector - never `auto` (E2-S2-AC2). Persisting the
  * expanded state locally is out of scope here (see T30).
+ *
+ * The collapse/expand width transition is suppressed when the user has
+ * `prefers-reduced-motion: reduce` set (E2-S2-AC6). jsdom's computed-style
+ * resolver never evaluates `@media` conditions, so - mirroring how
+ * src/lib/theme.ts surfaces the color-scheme preference as a `.dark` class
+ * instead of `@media (prefers-color-scheme)` - the preference is read via
+ * `matchMedia` and surfaced as `data-reduced-motion`, which
+ * src/styles/shell.css keys off the same way it keys off `data-collapsed`.
  */
 export function AppNav({ current }: AppNavProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   return (
-    <nav className="app-nav" aria-label="Application" data-collapsed={collapsed}>
+    <nav
+      className="app-nav"
+      aria-label="Application"
+      data-collapsed={collapsed}
+      data-reduced-motion={reducedMotion}
+    >
       <button
         type="button"
         className="app-nav__toggle"

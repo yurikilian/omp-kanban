@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/audits", () => {
-  it("resolves the requested session and returns its queued id without waiting for analysis (E4-S1-AC2, E4-S1-AC5)", async () => {
+  it("resolves the requested session, marks omitted pricing unavailable, and returns its queued id without waiting for analysis (E4-S1-AC2, E4-S1-AC4, E4-S1-AC5)", async () => {
     getSessionDetail.mockResolvedValue({ id: SESSION_ID });
     createAuditJob.mockResolvedValue(AUDIT_JOB);
 
@@ -54,7 +54,38 @@ describe("POST /api/audits", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual(AUDIT_JOB);
     expect(getSessionDetail).toHaveBeenCalledWith(SESSION_ID);
-    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID);
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
+  });
+
+  it("forwards nonblank user-supplied pricing verbatim (E4-S1-AC4)", async () => {
+    const pricing = "input tokens: $1.25 / million\noutput tokens: $5.00 / million";
+    getSessionDetail.mockResolvedValue({ id: SESSION_ID });
+    createAuditJob.mockResolvedValue(AUDIT_JOB);
+
+    const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing }));
+
+    expect(response.status).toBe(201);
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: true, pricing });
+  });
+
+  it("marks whitespace-only pricing unavailable (E4-S1-AC4)", async () => {
+    getSessionDetail.mockResolvedValue({ id: SESSION_ID });
+    createAuditJob.mockResolvedValue(AUDIT_JOB);
+
+    const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing: " \n\t " }));
+
+    expect(response.status).toBe(201);
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
+  });
+
+  it("treats non-string pricing as unavailable without failing the request (E4-S1-AC4)", async () => {
+    getSessionDetail.mockResolvedValue({ id: SESSION_ID });
+    createAuditJob.mockResolvedValue(AUDIT_JOB);
+
+    const response = await POST(createAuditRequest({ sessionId: SESSION_ID, pricing: { input: "$1.25" } }));
+
+    expect(response.status).toBe(201);
+    expect(createAuditJob).toHaveBeenCalledWith(SESSION_ID, { available: false, pricing: null });
   });
 
   it("rejects an unsafe session target before resolving or creating an audit (E4-S1-AC1)", async () => {

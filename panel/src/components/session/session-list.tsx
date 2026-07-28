@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { partitionPinned, sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
+import { useListKeyboard } from "@/hooks/use-list-keyboard";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
+import { partitionPinned, sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
 import "@/styles/table.css";
 import type { SessionSummary } from "@/server/sessions/types";
 import { PinControl } from "./pin-control";
@@ -12,6 +13,8 @@ interface SessionListProps {
   sessions: SessionSummary[];
   sort?: SessionSortState;
   onSortChange?: (sort: SessionSortState) => void;
+  /** Defaults to a same-tab navigation to /sessions/<id> when omitted. */
+  onOpenSession?: (sessionId: string) => void;
 }
 
 const UNAVAILABLE = "Unavailable";
@@ -66,7 +69,7 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
  * The initial snapshot is newest first. Live updates replace a row in place
  * and newly observed sessions append, keeping a user’s selection, scroll
  */
-export function SessionList({ sessions, sort, onSortChange }: SessionListProps) {
+export function SessionList({ sessions, sort, onSortChange, onOpenSession }: SessionListProps) {
   const [liveSessions, setLiveSessions] = useState(() => newestFirst(sessions));
 
   useEffect(() => {
@@ -189,8 +192,36 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
 
   const { pinned, unpinned } = partitionPinned(ordered, pinnedSessionIds);
 
-  const renderRow = (session: SessionSummary) => (
-    <tr key={session.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+  const openSession = useCallback(
+    (sessionId: string) => {
+      if (onOpenSession) {
+        onOpenSession(sessionId);
+        return;
+      }
+      window.location.assign(`/sessions/${encodeURIComponent(sessionId)}`);
+    },
+    [onOpenSession],
+  );
+
+  const displayOrder = [...pinned, ...unpinned];
+  const { focusedIndex, getItemProps, containerKeyDownProps } = useListKeyboard<HTMLTableRowElement>(displayOrder.length, (index) => {
+    const session = displayOrder[index];
+    if (session) openSession(session.id);
+  });
+
+  const renderRow = (session: SessionSummary, index: number) => (
+    <tr
+      key={session.id}
+      className="border-b border-border last:border-0 hover:bg-muted/50"
+      onClick={() => openSession(session.id)}
+      // Inline, not a Tailwind class: this project's vitest config does not
+      // run Tailwind's own CSS pipeline, so a utility class here would
+      // resolve to nothing under getComputedStyle in a test - see the
+      // rendered-geometry-tests skill. A plain inline style is real and
+      // testable in both jsdom and the browser (E3-S11-AC1).
+      style={focusedIndex === index ? { outline: "2px solid #3b82f6", outlineOffset: "-2px" } : undefined}
+      {...getItemProps(index)}
+    >
       <td className="px-3 py-2">{session.title}</td>
       <td className="px-3 py-2 text-muted-foreground">{session.project}</td>
       <td className="px-3 py-2 text-muted-foreground">
@@ -208,7 +239,11 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
       </td>
       <td className="session-list__numeric px-3 py-2">{session.agentCount.toLocaleString("en-US")}</td>
       <td className="session-list__numeric px-3 py-2">{session.toolCallCount.toLocaleString("en-US")}</td>
-      <td className="px-3 py-2 text-right">
+      <td
+        className="px-3 py-2 text-right"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
         <PinControl
           pinned={pinnedSessionIds.has(session.id)}
           sessionTitle={session.title}
@@ -257,7 +292,7 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
           </th>
         </tr>
       </thead>
-      <tbody>
+      <tbody {...containerKeyDownProps}>
         {pinned.length > 0 && (
           <tr className="border-b border-border">
             <th scope="rowgroup" colSpan={10} className="bg-muted/50 px-3 py-1 text-left text-xs font-medium text-muted-foreground">
@@ -265,8 +300,8 @@ export function SessionList({ sessions, sort, onSortChange }: SessionListProps) 
             </th>
           </tr>
         )}
-        {pinned.map(renderRow)}
-        {unpinned.map(renderRow)}
+        {pinned.map((session, index) => renderRow(session, index))}
+        {unpinned.map((session, index) => renderRow(session, index + pinned.length))}
       </tbody>
       </table>
     </>

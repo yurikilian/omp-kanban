@@ -46,6 +46,33 @@ function isTerminalAuditStatus(value: unknown): value is TerminalAuditStatus {
   return typeof value === "string" && Object.hasOwn(TERMINAL_STATUSES, value);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isRecordArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.every(isRecord);
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+function hasRecoverableSessionTotals(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNullableNumber(value.inputTokens) &&
+    isNullableNumber(value.outputTokens) &&
+    isNullableNumber(value.cost) &&
+    (value.currency === null || isNonEmptyString(value.currency))
+  );
+}
+
+
 function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
   if (
     !isRecord(value) ||
@@ -125,12 +152,21 @@ function terminalJobFromBundle(auditsRoot: string, auditId: string): IndexedAudi
     manifest.auditId !== auditId ||
     audit.auditId !== auditId ||
     !isTerminalAuditStatus(manifest.status) ||
-    typeof manifest.target.sessionId !== "string" ||
-    !manifest.target.sessionId ||
-    typeof manifest.createdAt !== "string" ||
-    !manifest.createdAt ||
+    !isNonEmptyString(manifest.target.sessionId) ||
+    !isNonEmptyString(manifest.target.transcriptPath) ||
+    !isNonEmptyString(manifest.fingerprint) ||
+    !isRecord(manifest.analyzer) ||
+    !isNonEmptyString(manifest.analyzer.name) ||
+    !isNonEmptyString(manifest.analyzer.version) ||
+    !isNonEmptyString(manifest.createdAt) ||
+    !isNonEmptyString(manifest.startedAt) ||
+    !isNonEmptyString(manifest.completedAt) ||
     !hasValidArtifacts(manifest.artifacts) ||
-    !Array.isArray(audit.findings)
+    !isStringArray(audit.coverageGaps) ||
+    !hasRecoverableSessionTotals(audit.sessionTotals) ||
+    !isRecordArray(audit.findings) ||
+    !isRecordArray(audit.proposals) ||
+    !isNonEmptyString(audit.methodology)
   ) {
     return null;
   }

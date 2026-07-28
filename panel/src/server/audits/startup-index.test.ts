@@ -10,7 +10,7 @@ const { dispatchQueuedAudit } = vi.hoisted(() => ({ dispatchQueuedAudit: vi.fn()
 vi.mock("./dispatch", () => ({ dispatchQueuedAudit }));
 
 import { createAuditJob, getLatestAuditJobForSession } from "./job-store";
-import { indexAuditBundlesOnStartup, readAuditJobRecords } from "./startup-index";
+import { indexAuditBundlesOnStartup, readAuditJobRecords, writeAuditJobRecords } from "./startup-index";
 
 const SESSION_ID = "2026-07-28T16-10-00-000Z_00000000-0000-7000-8000-000000000053";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +61,52 @@ describe("startup audit recovery", () => {
     ]);
     expect(readAuditJobRecords(temporaryRoot)).toEqual(jobs);
     expect(dispatchQueuedAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not recover malformed bundles as terminal audits (E4-S7-AC2)", () => {
+    temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-audit-invalid-startup-"));
+    for (const auditId of ["bundle-missing-field", "bundle-wrong-type"]) {
+      fs.cpSync(path.join(fixturesDir, auditId), path.join(temporaryRoot, auditId), { recursive: true });
+    }
+
+    expect(indexAuditBundlesOnStartup(temporaryRoot)).toEqual([]);
+    expect(readAuditJobRecords(temporaryRoot)).toEqual([]);
+    expect(dispatchQueuedAudit).not.toHaveBeenCalled();
+  });
+
+  it("replaces a stale running record with its completed bundle on startup (E4-S7-AC2)", () => {
+    temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-audit-terminal-startup-"));
+    fs.cpSync(path.join(fixturesDir, "bundle-valid"), path.join(temporaryRoot, "bundle-valid"), {
+      recursive: true,
+    });
+    writeAuditJobRecords(
+      [
+        {
+          id: "bundle-valid",
+          sessionId: "2026-07-22T10-15-00-aaaa1111",
+          status: "running",
+          createdAt: "2026-07-22T10:18:00Z",
+        },
+      ],
+      temporaryRoot,
+    );
+
+    expect(indexAuditBundlesOnStartup(temporaryRoot)).toEqual([
+      expect.objectContaining({
+        id: "bundle-valid",
+        status: "completed",
+        findings: [expect.objectContaining({ title: "Full log file read instead of tailed" })],
+      }),
+    ]);
+    expect(dispatchQueuedAudit).not.toHaveBeenCalled();
+  });
+
+  it("treats a fresh-install audits root as empty without creating it (E4-S7-AC2)", () => {
+    temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-audit-empty-startup-"));
+    const missingRoot = path.join(temporaryRoot, "not-created-yet");
+
+    expect(indexAuditBundlesOnStartup(missingRoot)).toEqual([]);
+    expect(fs.existsSync(missingRoot)).toBe(false);
   });
 
   it("hydrates a fresh runtime from indexed terminal bundles without dispatching an analyzer (E4-S7-AC2)", async () => {

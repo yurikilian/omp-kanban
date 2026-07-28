@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { useSessionListUrl } from "@/hooks/use-session-list-url";
 import { filterSessionsByQuery } from "@/lib/session-query";
@@ -23,6 +24,7 @@ interface SessionSearchProps {
 export function SessionSearch({ sessions }: SessionSearchProps) {
   const { query, setQuery } = useSessionListUrl();
   const filtered = useMemo(() => filterSessionsByQuery(sessions, query), [sessions, query]);
+  const emptyFilterAnnouncement = query.trim() && filtered.length === 0 ? "No sessions match your search." : "";
 
   return (
     <div>
@@ -35,12 +37,13 @@ export function SessionSearch({ sessions }: SessionSearchProps) {
           onChange={(event) => setQuery(event.target.value)}
           className="w-full max-w-sm rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         />
-        <p className="shrink-0 text-sm text-muted-foreground" aria-live="polite">
+        <p className="shrink-0 text-sm text-muted-foreground">
           {filtered.length} of {sessions.length} sessions
         </p>
       </div>
+      <LiveRegion message={emptyFilterAnnouncement} />
       {filtered.length === 0 ? (
-        <section role="status" className="rounded-lg border border-dashed border-border px-6 py-8 text-center">
+        <section className="rounded-lg border border-dashed border-border px-6 py-8 text-center">
           <h2 className="font-medium text-foreground">No matching sessions</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             No sessions match &ldquo;{query.trim()}&rdquo;. Try a different title, project or session id.

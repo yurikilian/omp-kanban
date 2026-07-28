@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
+import { DeleteSessionDialog } from "./delete-session-dialog";
 import type { SessionSummary } from "@/server/sessions/types";
+import type { SessionDetail } from "@/server/sessions/detail";
 
 interface SessionListProps {
   sessions: SessionSummary[];
@@ -57,18 +59,38 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
  * set assembled from multiple sources (e.g. a future live update).
  */
 export function SessionList({ sessions }: SessionListProps) {
-  const [liveSessions, setLiveSessions] = useState(sessions);
+  // Extract SessionSummary fields, handling cases where input might have extra fields like status
+  const ensureSessionSummary = (session: SessionSummary & { status?: unknown }): SessionSummary => {
+    const { id, title, project, startedAt, lastActivityAt, durationMs, costUsd, inputTokens, outputTokens, agentCount, toolCallCount } = session;
+    return {
+      id,
+      title,
+      project,
+      startedAt,
+      lastActivityAt,
+      durationMs,
+      costUsd,
+      inputTokens,
+      outputTokens,
+      agentCount,
+      toolCallCount,
+    };
+  };
+
+  const [liveSessions, setLiveSessions] = useState(sessions.map(ensureSessionSummary));
+  const [deletionAnnouncement, setDeletionAnnouncement] = useState("");
 
   useEffect(() => {
-    setLiveSessions(sessions);
+    setLiveSessions(sessions.map(ensureSessionSummary));
   }, [sessions]);
-
   const refreshSession = useCallback(async (sessionId: string) => {
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
       if (!response.ok) return;
 
-      const updatedSession = (await response.json()) as SessionSummary;
+      const detail = (await response.json()) as SessionDetail;
+      // Extract only SessionSummary fields by omitting status (SessionDetail-only field)
+      const { status: _, ...updatedSession } = detail;
       setLiveSessions((currentSessions) =>
         currentSessions.map((session) => (session.id === sessionId ? updatedSession : session)),
       );
@@ -77,11 +99,20 @@ export function SessionList({ sessions }: SessionListProps) {
     }
   }, []);
 
+  const removeSession = useCallback((sessionId: string, sessionTitle: string) => {
+    setLiveSessions((currentSessions) => currentSessions.filter((session) => session.id !== sessionId));
+    setDeletionAnnouncement(`Deleted ${sessionTitle}.`);
+  }, []);
+
   useLiveSessions(refreshSession);
 
   const ordered = [...liveSessions].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
 
   return (
+    <>
+      <div role="status" aria-live="polite" className="sr-only">
+        {deletionAnnouncement}
+      </div>
     <table className="w-full border-collapse text-sm">
       <caption className="sr-only">Recorded OMP sessions, newest first</caption>
       <thead>
@@ -113,6 +144,9 @@ export function SessionList({ sessions }: SessionListProps) {
           <th scope="col" className="px-3 py-2 text-right font-medium">
             Tool calls
           </th>
+          <th scope="col" className="px-3 py-2 text-right font-medium">
+            Actions
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -135,9 +169,17 @@ export function SessionList({ sessions }: SessionListProps) {
             </td>
             <td className="px-3 py-2 text-right tabular-nums">{session.agentCount.toLocaleString("en-US")}</td>
             <td className="px-3 py-2 text-right tabular-nums">{session.toolCallCount.toLocaleString("en-US")}</td>
+            <td className="px-3 py-2 text-right">
+              <DeleteSessionDialog
+                sessionId={session.id}
+                sessionTitle={session.title}
+                onDeleted={() => removeSession(session.id, session.title)}
+              />
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+    </>
   );
 }

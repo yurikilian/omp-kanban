@@ -1,5 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@/server/sessions/types";
 import { SessionList } from "./session-list";
 
@@ -84,4 +84,5 @@ describe("SessionList", () => {
 
     expect(screen.getAllByRole("row")).toHaveLength(1); // header row only
   });
+
 });

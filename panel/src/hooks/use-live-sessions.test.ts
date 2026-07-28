@@ -90,29 +90,72 @@ describe("useLiveSessions", () => {
 
   it("updates the affected list row and open detail in place without changing the route (E3-S9-AC1)", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    
+    // Mock fetch to return different responses based on endpoint
+    let fetchCallCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => refreshedSession,
-      })),
+      vi.fn(async (url: string) => {
+        fetchCallCount++;
+        // Sessions endpoint returns SessionDetail (with status)
+        if (url.includes("/api/sessions/") && !url.includes("/agents") && !url.includes("/timeline")) {
+          
+          return {
+            ok: true,
+            json: async () => ({
+              ...refreshedSession,
+              status: refreshedSession.status || initialSession.status,
+            }),
+          };
+        }
+        // Agents endpoint returns empty array (AgentTree can handle no agents)
+        if (url.includes("/agents")) {
+          
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        // Timeline endpoint returns empty array
+        if (url.includes("/timeline")) {
+          
+          return {
+            ok: true,
+            json: async () => [],
+          };
+        }
+        // Fallback
+        
+        return {
+          ok: true,
+          json: async () => [],
+        };
+      }),
     );
     window.history.replaceState(null, "", `/sessions/${initialSession.id}`);
     const routeBeforeUpdate = window.location.pathname;
+    // Extract only SessionSummary fields (without status) for SessionList
+    const sessionSummary = (() => {
+      const { id, title, project, startedAt, lastActivityAt, durationMs, costUsd, inputTokens, outputTokens, agentCount, toolCallCount } = initialSession;
+      return { id, title, project, startedAt, lastActivityAt, durationMs, costUsd, inputTokens, outputTokens, agentCount, toolCallCount };
+    })();
+    
     const { unmount } = render(
       createElement(
         "div",
         null,
-        createElement(SessionList, { sessions: [initialSession] }),
+        createElement(SessionList, { sessions: [sessionSummary] }),
         createElement(SessionDetail, { session: initialSession }),
       ),
     );
-
     expect(FakeEventSource.instances).toHaveLength(1);
+    
     FakeEventSource.instances[0].emit("session-change", JSON.stringify({ sessionId: initialSession.id }));
 
     await waitFor(() => {
-      expect(screen.getAllByText(refreshedSession.title)).toHaveLength(2);
+      const texts = screen.queryAllByText(refreshedSession.title);
+      
+      expect(texts).toHaveLength(2);
     });
     expect(window.location.pathname).toBe(routeBeforeUpdate);
 

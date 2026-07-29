@@ -11,9 +11,8 @@
 // domain routes and the real event stream land under src/app/api/** in
 // later tasks; this is the architectural seam they'll be added through.
 //
-// The launcher hook (panel/runtime/kb-panel.ts, added in a later task)
-// spawns this file directly and reads the printed URL; it is not run
-// through `npm start`.
+// The launcher hook (hooks/pre/kb-panel.ts) spawns this file directly with a
+// PORT env var and polls /internal/health; it does not read the printed URL.
 
 process.env.NEXT_TELEMETRY_DISABLED = "1";
 

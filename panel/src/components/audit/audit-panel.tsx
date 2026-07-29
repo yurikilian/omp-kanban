@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { AuditReport } from "@/server/audits/bundle-schema";
 import { cancelAudit } from "@/server/audits/cancel";
+import { AuditProgress, type AuditProgressStatus } from "./audit-progress";
 import { FindingCard } from "./finding-card";
 
 /** The audit currently being generated, if any - the only state cancellation applies to (E4-S6-AC6). */
@@ -29,6 +30,16 @@ export function AuditPanel({ audit, runningJob = null }: AuditPanelProps) {
     });
   }
 
+  // Cancelling in flight takes priority over the job's own queued/running
+  // status - once a terminal cancellation outcome lands there is nothing
+  // left in flight to report, and the cancellation's own status/alert text
+  // below already carries that announcement (E4-S6-AC5).
+  const progressStatus: AuditProgressStatus | null = isCancelling
+    ? "cancelling"
+    : runningJob && cancellationOutcome === null
+      ? runningJob.status
+      : null;
+
   return (
     <section role="region" aria-label="Audit findings" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -45,6 +56,7 @@ export function AuditPanel({ audit, runningJob = null }: AuditPanelProps) {
           </button>
         ) : null}
       </div>
+      {progressStatus ? <AuditProgress status={progressStatus} /> : null}
       {cancellationOutcome === "cancelled" ? (
         <p role="status" aria-label="Audit cancellation" className="text-sm text-muted-foreground">
           This audit was cancelled.

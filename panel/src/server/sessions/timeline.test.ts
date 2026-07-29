@@ -70,8 +70,24 @@ describe("parseAgentTimeline", () => {
         agent: "main",
         toolName: "bash",
         summary: "Run tests",
+        input: "Run tests",
+        output: "ok",
         durationMs: 5000,
         outcome: "success",
+      },
+    ]);
+  });
+  it("retains a tool call's input intent and result output (E3-S11-AC2)", () => {
+    const raw = [
+      '{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"t1","toolName":"bash","startedAt":"2026-03-01T00:05:00.000Z","intent":"npm test -- event-stream"},"id":"c1","parentId":"m1","timestamp":"2026-03-01T00:05:00.000Z"}',
+      '{"type":"message","id":"m2","parentId":"c1","timestamp":"2026-03-01T00:05:05.000Z","message":{"role":"toolResult","content":[{"type":"text","text":"Tests passed."}],"toolCallId":"t1","toolName":"bash"}}',
+    ].join("\n");
+
+    expect(parseAgentTimeline(raw, "main")).toMatchObject([
+      {
+        type: "tool_call",
+        input: "npm test -- event-stream",
+        output: "Tests passed.",
       },
     ]);
   });

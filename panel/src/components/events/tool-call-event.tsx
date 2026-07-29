@@ -9,8 +9,11 @@ export interface ToolCallEventProps {
   timestamp: string;
   toolName: string;
   summary: string | null;
+  input?: string | null;
+  output?: string | null;
   durationMs: number | null;
   outcome: ToolCallOutcome;
+  expanded?: boolean;
 }
 
 const STATUS_BY_OUTCOME: Record<ToolCallOutcome, EventStatus> = {
@@ -26,12 +29,21 @@ function OutcomeIcon({ outcome }: { outcome: ToolCallOutcome }) {
 }
 
 /**
- * A tool call collapses to one line - tool name, summary, duration and
- * outcome - never a full card, and never expands here (expansion is a
- * separate concern). The line itself carries fixed nowrap/ellipsis styling
- * so it can never grow past one row (E3-S7-AC1).
+ * A tool call normally collapses to one line - tool name, summary, duration
+ * and outcome - so the timeline stays scannable (E3-S7-AC1). The timeline
+ * parent supplies expansion state when keyboard navigation requests details.
  */
-export function ToolCallEvent({ agent, timestamp, toolName, summary, durationMs, outcome }: ToolCallEventProps) {
+export function ToolCallEvent({
+  agent,
+  timestamp,
+  toolName,
+  summary,
+  input = null,
+  output = null,
+  durationMs,
+  outcome,
+  expanded = false,
+}: ToolCallEventProps) {
   return (
     <EventFrame
       icon={<Terminal aria-hidden="true" className="size-4" />}
@@ -50,6 +62,23 @@ export function ToolCallEvent({ agent, timestamp, toolName, summary, durationMs,
           <OutcomeIcon outcome={outcome} />
         </span>
       }
-    />
+    >
+      {expanded && (
+        <dl data-slot="tool-call-details" className="space-y-2 text-sm">
+          <div>
+            <dt className="font-medium text-foreground">Input</dt>
+            <dd className="m-0 whitespace-pre-wrap break-words text-muted-foreground">
+              {input === null ? "Unavailable" : sanitizeText(input)}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-foreground">Output</dt>
+            <dd className="m-0 whitespace-pre-wrap break-words text-muted-foreground">
+              {output === null ? "Unavailable" : sanitizeText(output)}
+            </dd>
+          </div>
+        </dl>
+      )}
+    </EventFrame>
   );
 }

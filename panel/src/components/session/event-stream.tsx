@@ -33,7 +33,7 @@ const TIMELINE_REFRESH_INTERVAL_MS = 2_000;
  * type keeps its own identity rather than reading as identical cards
  * (E3-S7-AC1).
  */
-function renderEvent(event: TimelineEvent): ReactNode {
+function renderEvent(event: TimelineEvent, expanded: boolean): ReactNode {
   switch (event.type) {
     case "prompt":
       return <PromptEvent key={event.id} timestamp={event.timestamp} text={event.text} />;
@@ -59,8 +59,11 @@ function renderEvent(event: TimelineEvent): ReactNode {
           timestamp={event.timestamp}
           toolName={event.toolName}
           summary={event.summary}
+          input={event.input}
+          output={event.output}
           durationMs={event.durationMs}
           outcome={event.outcome}
+          expanded={expanded}
         />
       );
     case "delegation":
@@ -357,7 +360,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
               }
             }}
           >
-            {renderEvent(event)}
+            {renderEvent(event, expandedEventIds.has(event.id))}
           </div>
         ))}
         <div

@@ -26,6 +26,8 @@ const ALL_EVENT_TYPES: TimelineEvent[] = [
     agent: "main",
     toolName: "bash",
     summary: "Run the test suite",
+    input: "npm test",
+    output: "Tests passed.",
     durationMs: 5000,
     outcome: "success",
   },
@@ -152,5 +154,43 @@ describe("EventStream", () => {
     fireEvent.keyDown(timeline, { key: "Escape" });
     await waitFor(() => expect(screen.queryByText("Event inspector")).not.toBeInTheDocument());
     expect(firstRow.style.outline).toBe("2px solid #3b82f6");
+  });
+
+  it("EventStream Enter visibly expands and then collapses the focused tool call (E3-S11-AC2)", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const eventsWithToolDetails: TimelineEvent[] = ALL_EVENT_TYPES.map((event) =>
+      event.type === "tool_call"
+        ? { ...event, input: "npm test -- event-stream", output: "Tests passed." }
+        : event,
+    );
+    mockFetchOnce({ ok: true, json: async () => eventsWithToolDetails });
+
+    render(<EventStream sessionId="session-1" />);
+    await screen.findByText("Run the test suite");
+
+    const timeline = screen.getByLabelText("Session event timeline");
+    const toolCallRow = document.getElementById("session-event-t1") as HTMLElement;
+
+    fireEvent.keyDown(timeline, { key: "j" });
+    fireEvent.keyDown(timeline, { key: "j" });
+    fireEvent.keyDown(timeline, { key: "j" });
+    fireEvent.keyDown(timeline, { key: "j" });
+    expect(toolCallRow.style.outline).toBe("2px solid #3b82f6");
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+    expect(screen.queryByText("Output")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(timeline, { key: "Enter" });
+    expect(toolCallRow).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Input")).toBeVisible();
+    expect(screen.getByText("npm test -- event-stream")).toBeVisible();
+    expect(screen.getByText("Output")).toBeVisible();
+    expect(screen.getByText("Tests passed.")).toBeVisible();
+
+    fireEvent.keyDown(timeline, { key: "Enter" });
+    expect(toolCallRow).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+    expect(screen.queryByText("Output")).not.toBeInTheDocument();
+    expect(screen.queryByText("npm test -- event-stream")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tests passed.")).not.toBeInTheDocument();
   });
 });

@@ -34,6 +34,8 @@ export interface ToolCallTimelineEvent {
   agent: string;
   toolName: string;
   summary: string | null;
+  input: string | null;
+  output: string | null;
   durationMs: number | null;
   outcome: ToolCallOutcome;
 }
@@ -256,6 +258,8 @@ export function parseAgentTimeline(raw: string, agent: string): TimelineEvent[] 
         agent,
         toolName: message.toolName ?? pending?.toolName ?? "unknown",
         summary: pending?.summary ?? null,
+        input: pending?.summary ?? null,
+        output: extractText(message.content),
         durationMs: pending ? Date.parse(timestamp) - Date.parse(pending.startedAt) : null,
         outcome: message.isError ? "error" : "success",
       });
@@ -270,6 +274,8 @@ export function parseAgentTimeline(raw: string, agent: string): TimelineEvent[] 
       agent,
       toolName: pending.toolName,
       summary: pending.summary,
+      input: pending.summary,
+      output: null,
       durationMs: null,
       outcome: "pending",
     });

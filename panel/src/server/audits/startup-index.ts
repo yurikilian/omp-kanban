@@ -2,16 +2,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { reconcileOrphanedRunningJobs, recordSkippedBundleDirectory } from "./reconcile";
+import type { AuditJob, AuditJobStatus } from "./types";
 
 export const AUDIT_JOB_RECORDS_FILENAME = ".omp-panel-audit-jobs.json";
 
-const TERMINAL_STATUSES: Record<string, true> = {
+type TerminalAuditStatus = Extract<AuditJobStatus, "completed" | "insufficient_signal" | "failed">;
+const TERMINAL_STATUSES: Record<TerminalAuditStatus, true> = {
   completed: true,
   insufficient_signal: true,
   failed: true,
 };
 
-const JOB_STATUSES: Record<string, true> = {
+const JOB_STATUSES: Record<AuditJobStatus, true> = {
   queued: true,
   running: true,
   completed: true,
@@ -23,17 +25,8 @@ const JOB_STATUSES: Record<string, true> = {
 
 const BUNDLE_FILENAMES = ["manifest.json", "audit.json", "report.md", "evidence.jsonl"] as const;
 
-type AuditJobStatus = keyof typeof JOB_STATUSES;
-type TerminalAuditStatus = keyof typeof TERMINAL_STATUSES;
 
-export interface IndexedAuditJob {
-  id: string;
-  sessionId: string;
-  status: AuditJobStatus;
-  createdAt: string;
-  findings?: unknown[];
-  fingerprint?: string;
-  failureSummary?: string;
+export interface IndexedAuditJob extends AuditJob {
   pid?: number;
 }
 
@@ -89,6 +82,8 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     (value.findings !== undefined && !Array.isArray(value.findings)) ||
     (value.fingerprint !== undefined && typeof value.fingerprint !== "string") ||
     (value.failureSummary !== undefined && typeof value.failureSummary !== "string") ||
+    (value.exitStatus !== undefined && !isNullableNumber(value.exitStatus)) ||
+    (value.stderrSummary !== undefined && typeof value.stderrSummary !== "string") ||
     (value.pid !== undefined && typeof value.pid !== "number")
   ) {
     return null;
@@ -102,6 +97,8 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     ...(value.findings === undefined ? {} : { findings: value.findings }),
     ...(value.fingerprint === undefined ? {} : { fingerprint: value.fingerprint }),
     ...(value.failureSummary === undefined ? {} : { failureSummary: value.failureSummary }),
+    ...(value.exitStatus === undefined ? {} : { exitStatus: value.exitStatus }),
+    ...(value.stderrSummary === undefined ? {} : { stderrSummary: value.stderrSummary }),
     ...(value.pid === undefined ? {} : { pid: value.pid }),
   };
 }
@@ -143,7 +140,11 @@ function hasParseableEvidence(bundleDir: string): boolean {
   }
 }
 
-function terminalJobFromBundle(auditsRoot: string, auditId: string): IndexedAuditJob | null {
+function terminalJobFromBundle(
+  auditsRoot: string,
+  auditId: string,
+  existing?: IndexedAuditJob,
+): IndexedAuditJob | null {
   const bundleDir = path.join(auditsRoot, auditId);
   if (!hasCanonicalArtifacts(bundleDir) || !hasParseableEvidence(bundleDir)) return null;
 
@@ -191,6 +192,12 @@ function terminalJobFromBundle(auditsRoot: string, auditId: string): IndexedAudi
     findings: audit.findings,
     ...(typeof manifest.fingerprint === "string" ? { fingerprint: manifest.fingerprint } : {}),
     ...(typeof manifest.failureSummary === "string" ? { failureSummary: manifest.failureSummary } : {}),
+    ...(manifest.status === "failed" && existing?.status === "failed" && existing.exitStatus !== undefined
+      ? { exitStatus: existing.exitStatus }
+      : {}),
+    ...(manifest.status === "failed" && existing?.status === "failed" && existing.stderrSummary !== undefined
+      ? { stderrSummary: existing.stderrSummary }
+      : {}),
   };
 }
 
@@ -237,7 +244,7 @@ export function indexAuditBundlesOnStartup(auditsRootPath: string = auditsRoot()
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
-    const job = terminalJobFromBundle(auditsRootPath, entry.name);
+    const job = terminalJobFromBundle(auditsRootPath, entry.name, jobsById.get(entry.name));
     if (job) {
       jobsById.set(job.id, job);
       continue;

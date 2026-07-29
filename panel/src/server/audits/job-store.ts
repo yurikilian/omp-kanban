@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { dispatchQueuedAudit } from "./dispatch";
+import { dispatchQueuedAudit, getAuditBundleDirectory } from "./dispatch";
+import { reconcileAudit } from "./reconcile";
 import type { AuditPricing } from "./analyzer-command";
 import { fingerprintAuditTarget, type AuditTarget } from "./fingerprint";
 import {
@@ -47,11 +48,11 @@ function ensureRecoveredAuditJobs(): void {
   rehydrateAuditJobs(indexAuditBundlesOnStartup());
 }
 
-function updateAuditJobStatus(id: string, status: StoredAuditJob["status"]): void {
+function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): void {
   const currentJob = auditJobById.get(id);
   if (!currentJob) return;
 
-  storeAuditJob({ ...currentJob, status });
+  storeAuditJob({ ...currentJob, ...updates });
   persistAuditJobs();
 }
 
@@ -89,22 +90,23 @@ export async function createAuditJob(
   const pricing = options.pricing ?? unavailablePricing;
   setImmediate(() => {
     void dispatchQueuedAudit({ auditId: job.id, pricing, sessionId })
-      .then((child) => {
+      .then(async (child) => {
         if (!child) {
-          updateAuditJobStatus(job.id, "failed");
+          updateAuditJob(job.id, { status: "failed" });
           return;
         }
 
-        updateAuditJobStatus(job.id, "running");
-        child.once("close", () => {
-          rehydrateAuditJobs(indexAuditBundlesOnStartup());
-          if (auditJobById.get(job.id)?.status === "running") {
-            updateAuditJobStatus(job.id, "failed");
-          }
+        updateAuditJob(job.id, {
+          status: "running",
+          ...(typeof child.pid === "number" ? { pid: child.pid } : {}),
         });
+
+        const terminalState = await reconcileAudit({ bundleDirectory: getAuditBundleDirectory(job.id), child });
+        updateAuditJob(job.id, terminalState);
+        rehydrateAuditJobs(indexAuditBundlesOnStartup());
       })
       .catch((error) => {
-        updateAuditJobStatus(job.id, "failed");
+        updateAuditJob(job.id, { status: "failed" });
         console.error(`Failed to start audit ${job.id}`, error);
       });
   });

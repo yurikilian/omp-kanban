@@ -6,9 +6,12 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditJob } from "./types";
 
-const { dispatchQueuedAudit } = vi.hoisted(() => ({ dispatchQueuedAudit: vi.fn() }));
+const { dispatchQueuedAudit, getAuditBundleDirectory } = vi.hoisted(() => ({
+  dispatchQueuedAudit: vi.fn(),
+  getAuditBundleDirectory: vi.fn((auditId: string) => auditId),
+}));
 
-vi.mock("./dispatch", () => ({ dispatchQueuedAudit }));
+vi.mock("./dispatch", () => ({ dispatchQueuedAudit, getAuditBundleDirectory }));
 
 import { createAuditJob, getLatestAuditJobForSession } from "./job-store";
 import { indexAuditBundlesOnStartup } from "./startup-index";
@@ -21,6 +24,7 @@ let temporaryRoot: string | undefined;
 
 afterEach(() => {
   dispatchQueuedAudit.mockReset();
+  getAuditBundleDirectory.mockClear();
   if (temporaryRoot) fs.rmSync(temporaryRoot, { recursive: true, force: true });
   temporaryRoot = undefined;
 });

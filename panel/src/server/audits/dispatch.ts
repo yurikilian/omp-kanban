@@ -57,8 +57,12 @@ function waitForChildToSpawn(child: ChildProcess): Promise<void> {
 export function dispatchAudit(input: AnalyzerCommandInput): ChildProcess {
   const analyzer = buildAnalyzerCommand(input);
 
-  return spawn(analyzer.command, analyzer.args, { stdio: "ignore" });
+  return spawn(analyzer.command, analyzer.args, { stdio: ["ignore", "ignore", "pipe"] });
 }
+export function getAuditBundleDirectory(auditId: string): string {
+  return path.join(os.homedir(), ".omp", "forensics", "audits", auditId);
+}
+
 
 export async function dispatchQueuedAudit(
   input: QueuedAuditDispatchInput,
@@ -66,13 +70,7 @@ export async function dispatchQueuedAudit(
   const targetTranscript = await findSessionTranscript(input.sessionId);
   if (!targetTranscript) return null;
 
-  const bundleDirectory = path.join(
-    os.homedir(),
-    ".omp",
-    "forensics",
-    "audits",
-    input.auditId,
-  );
+  const bundleDirectory = getAuditBundleDirectory(input.auditId);
   await fs.mkdir(bundleDirectory, { recursive: true });
 
   const child = dispatchAudit({

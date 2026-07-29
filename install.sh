@@ -157,20 +157,22 @@ if [ "$APPLY_CONFIG" -eq 1 ]; then
     # Merge: load both YAMLs, for each key in recommended that's not in config,
     # add it. Simple overlay, no deep merge.
     if command -v python3 >/dev/null 2>&1; then
-      python3 << "PYTHON_MERGE"
-import sys, yaml
+      export RECOMMENDED_YML="$SRC/guardrails/omp-config.recommended.yml"
+      export CONFIG_YML_PATH="$CONFIG_YML"
+      python3 << 'PYTHON_MERGE'
+import os, yaml
 
-with open('$SRC/guardrails/omp-config.recommended.yml') as f:
+with open(os.environ['RECOMMENDED_YML']) as f:
   recommended = yaml.safe_load(f) or {}
 
-with open('$CONFIG_YML') as f:
+with open(os.environ['CONFIG_YML_PATH']) as f:
   config = yaml.safe_load(f) or {}
 
 for key in recommended:
   if key not in config:
     config[key] = recommended[key]
 
-with open('$CONFIG_YML', 'w') as f:
+with open(os.environ['CONFIG_YML_PATH'], 'w') as f:
   yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 PYTHON_MERGE
       say "  merged recommended keys into config.yml"

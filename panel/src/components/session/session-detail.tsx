@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AuditPanel } from "@/components/audit/audit-panel";
 import type { AuditReport } from "@/server/audits/bundle-schema";
+import type { AuditJob } from "@/server/audits/types";
 import { GenerateAuditButton } from "@/components/audit/generate-audit-button";
 import { subscribeToAuditChanges } from "@/lib/live-stream";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
@@ -20,6 +21,8 @@ export interface SessionDetailProps {
 export function SessionDetail({ session, audit }: SessionDetailProps) {
   const [liveSession, setLiveSession] = useState(session);
   const [liveAudit, setLiveAudit] = useState<AuditReport | null>(audit ?? null);
+  const [auditHistory, setAuditHistory] = useState<AuditJob[]>([]);
+  const [auditHistorySessionId, setAuditHistorySessionId] = useState(session.id);
 
   useEffect(() => {
     setLiveSession(session);
@@ -46,7 +49,7 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
     [session.id],
   );
 
-  const refreshAudit = useCallback(
+  const refreshAuditHistory = useCallback(
     async (sessionId: string) => {
       if (sessionId !== session.id) return;
 
@@ -54,8 +57,11 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
         const response = await fetch(`/api/audits?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
         if (!response.ok) return;
 
-        const audit = (await response.json()) as AuditReport | null;
-        if (audit) setLiveAudit(audit);
+        const history: unknown = await response.json();
+        if (!Array.isArray(history)) return;
+
+        setAuditHistory(history as AuditJob[]);
+        setAuditHistorySessionId(sessionId);
       } catch {
         return;
       }
@@ -63,18 +69,24 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
     [session.id],
   );
 
+  useEffect(() => {
+    setAuditHistory([]);
+    setAuditHistorySessionId(session.id);
+    void refreshAuditHistory(session.id);
+  }, [session.id, refreshAuditHistory]);
+
   useLiveSessions(refreshSession);
 
-  // Subscribe to audit changes from the stream
   useEffect(() => {
-    const unsubscribe = subscribeToAuditChanges(({ sessionId, status }) => {
+    const unsubscribe = subscribeToAuditChanges(({ sessionId }) => {
       if (sessionId !== session.id) return;
-      // When audit status changes, refresh the audit data
-      refreshAudit(sessionId);
+      void refreshAuditHistory(sessionId);
     });
 
     return unsubscribe;
-  }, [session.id, refreshAudit]);
+  }, [session.id, refreshAuditHistory]);
+
+  const displayedAuditHistory = auditHistorySessionId === session.id ? auditHistory : [];
 
   return (
     <section role="region" aria-label="Session detail" className="space-y-2">
@@ -92,7 +104,7 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
         agentCount={liveSession.agentCount}
         toolCallCount={liveSession.toolCallCount}
       />
-      <AuditPanel audit={liveAudit} />
+      <AuditPanel audit={liveAudit} auditJobs={displayedAuditHistory} />
       <EventStream sessionId={liveSession.id} />
       <AgentTree sessionId={liveSession.id} />
     </section>

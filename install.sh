@@ -69,7 +69,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
       say "  removed skills/$s"
     fi
   done
-  for h in kb-guardrails.ts; do
+  for h in kb-guardrails.ts kb-panel.ts; do
     if [ -e "$HOOK_DIR/$h" ]; then
       run rm -f "$HOOK_DIR/$h"
       say "  removed hooks/pre/$h"
@@ -124,12 +124,11 @@ for s in $SKILLS; do
   say "  skills/$s"
 done
 
-# The dispatch guardrails. Not behind a flag: it examines only `task` calls that
-# spawn kb-* agents, so it is inert outside a kanban cycle, and the caps it
-# enforces are the ones the skill's prose now promises. Set KB_GUARD_DISABLED=1
-# to turn it off without uninstalling.
-run cp "$SRC/hooks/pre/kb-guardrails.ts" "$HOOK_DIR/kb-guardrails.ts"
-say "  hooks/pre/kb-guardrails.ts"
+# Install dispatch guardrails (gate) and panel auto-launcher hooks
+for h in kb-guardrails.ts kb-panel.ts; do
+  run cp "$SRC/hooks/pre/$h" "$HOOK_DIR/$h"
+  say "  hooks/pre/$h"
+done
 
 # The recommended omp settings, as an overlay you can pass per run with
 # `omp --config`. --apply-config merges them into config.yml instead.

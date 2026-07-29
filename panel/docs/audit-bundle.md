@@ -334,9 +334,19 @@ conformance schema that enforces all of this are pinned down alongside
 - **Where the job service's own job records live** — a runtime file store
   beside the bundles, or a small database. Deferred until restart recovery
   needs it decided.
-- **Whether cancellation ships, and how a cancelled bundle (if any) differs
-  from this document** — deferred until the analyzer's mid-run termination
-  behavior has been observed directly.
+- **How a cancelled bundle (if any) differs from this document.** Resolved
+  (E4-S6-AC6): it doesn't, because there is no cancelled bundle shape.
+  Killing the analyzer child mid-run leaves the bundle directory with some
+  subset of the four canonical files missing — the same "not finished being
+  written yet" state a still-running audit is in — which `validate.ts`
+  already resolves to `status: "incomplete"` (E4-S5-AC4), distinct from
+  `status: "valid"`. That distinction was observed directly, not assumed:
+  it is what the existing bundle validator does with any directory missing
+  one of the four files, cancelled or not. `cancelled` is recorded once,
+  by `panel/src/server/audits/cancel.ts`, in the job service's own record
+  after it stops the child — the partial bundle on disk, if the child got
+  far enough to write anything, is simply never read as authoritative for
+  a cancelled audit.
 - **Schema versions beyond `1`.** `schemaVersion` exists so a future,
   incompatible change can be introduced without breaking readers of older
   bundles; nothing here assumes what a `2` would change.

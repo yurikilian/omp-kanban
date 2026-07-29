@@ -1,8 +1,9 @@
 // @vitest-environment node
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { auditsForSession, indexAuditBundles } from "./index-bundles";
+import { describe, expect, it, vi } from "vitest";
+import { auditsForSession, indexAuditBundles, readCompletedAuditMetadata } from "./index-bundles";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.resolve(dirname, "../../../tests/fixtures/audits");
@@ -46,5 +47,22 @@ describe("indexing a bundle root (E4-S5-AC1, E4-S5-AC2, E4-S5-AC4)", () => {
 
     expect(index.all).toEqual([]);
     expect(index.bySessionId.size).toBe(0);
+  });
+
+  it("reads a completed audit's metadata without loading evidence records (E4-S9-AC4)", () => {
+    const evidencePath = path.join(fixturesDir, "bundle-valid", "evidence.jsonl");
+    const readFileSync = vi.spyOn(fs, "readFileSync");
+
+    try {
+      const audit = readCompletedAuditMetadata(fixturesDir, {
+        auditId: "bundle-valid",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+      });
+
+      expect(audit?.auditId).toBe("bundle-valid");
+      expect(readFileSync).not.toHaveBeenCalledWith(evidencePath, "utf8");
+    } finally {
+      readFileSync.mockRestore();
+    }
   });
 });

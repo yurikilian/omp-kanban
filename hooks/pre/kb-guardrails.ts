@@ -18,7 +18,7 @@
 // Scope. Only `task` calls that spawn `kb-*` agents are examined. Every other tool call,
 // and every session that is not running the board, passes through untouched — so this
 // cannot wedge unrelated work. Any internal failure fails OPEN (allow, log, continue),
-// matching kb-dashboard.ts's rule that a hook must never break a session.
+// matching kb-panel.ts's rule that a hook must never break a session.
 //
 // State is shared across sessions at ~/.omp/agent/kanban-guardrails/ because concurrency
 // has to be counted across the whole workflow, not independently inside each parent agent.

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import type { AuditStateInput } from "@/lib/audit-states";
 import type { AuditReport } from "@/server/audits/bundle-schema";
-import { cancelAudit } from "@/server/audits/cancel";
 import type { AuditJob } from "@/server/audits/types";
 import { AuditProgress, type AuditProgressStatus } from "./audit-progress";
 import { AuditState } from "./audit-state";
@@ -18,6 +17,7 @@ export interface AuditPanelProps {
   audit: AuditReport | null;
   auditJobs?: readonly AuditJob[];
   runningJob?: AuditPanelRunningJob | null;
+  onCancelAudit?: (auditId: string) => Promise<void>;
 }
 
 function stateInputForAuditJob(auditJob: AuditJob): AuditStateInput | null {
@@ -58,31 +58,25 @@ function latestAuditInProgress(auditJobs: readonly AuditJob[]): AuditPanelRunnin
   return null;
 }
 
-export function AuditPanel({ audit, auditJobs = [], runningJob = null }: AuditPanelProps) {
+export function AuditPanel({ audit, auditJobs = [], runningJob = null, onCancelAudit }: AuditPanelProps) {
   const [isCancelling, startCancelling] = useTransition();
-  const [cancellationOutcome, setCancellationOutcome] = useState<"cancelled" | "failed" | null>(null);
   const activeJob = runningJob ?? latestAuditInProgress(auditJobs);
 
   function handleCancel() {
-    if (!activeJob) return;
-    setCancellationOutcome(null);
+    if (!activeJob || !onCancelAudit) return;
+
     startCancelling(async () => {
-      const result = await cancelAudit(activeJob.id);
-      setCancellationOutcome(result.ok ? "cancelled" : "failed");
+      await onCancelAudit(activeJob.id);
     });
   }
 
-  const progressStatus: AuditProgressStatus | null = isCancelling
-    ? "cancelling"
-    : activeJob && cancellationOutcome === null
-      ? activeJob.status
-      : null;
+  const progressStatus: AuditProgressStatus | null = isCancelling ? "cancelling" : activeJob?.status ?? null;
 
   return (
     <section role="region" aria-label="Audit findings" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Audit findings</h2>
-        {activeJob && cancellationOutcome !== "cancelled" ? (
+        {activeJob && onCancelAudit ? (
           <button
             type="button"
             aria-label="Cancel audit"
@@ -95,14 +89,6 @@ export function AuditPanel({ audit, auditJobs = [], runningJob = null }: AuditPa
         ) : null}
       </div>
       {progressStatus ? <AuditProgress status={progressStatus} /> : null}
-      {cancellationOutcome === "cancelled" ? (
-        <p role="status" aria-label="Audit cancellation" className="text-sm text-muted-foreground">
-          This audit was cancelled.
-        </p>
-      ) : null}
-      {cancellationOutcome === "failed" ? (
-        <p role="alert">Could not cancel the audit. It may have already finished.</p>
-      ) : null}
       {auditJobs.map((auditJob) => {
         const stateInput = stateInputForAuditJob(auditJob);
         return stateInput ? <AuditState key={auditJob.id} {...stateInput} /> : null;

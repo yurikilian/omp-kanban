@@ -1,17 +1,12 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AuditReport } from "@/server/audits/bundle-schema";
-import { cancelAudit } from "@/server/audits/cancel";
+import type { AuditJob } from "@/server/audits/types";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { SessionDetail } from "../session/session-detail";
 import { AuditPanel } from "./audit-panel";
 
-vi.mock("@/server/audits/cancel", () => ({
-  cancelAudit: vi.fn(),
-}));
-
-const cancelAuditMock = vi.mocked(cancelAudit);
 
 const SESSION: SessionDetailData = {
   id: "2026-01-01T09-00-00-000Z_00000000-0000-7000-8000-00000000000a",
@@ -95,43 +90,34 @@ describe("AuditPanel", () => {
 });
 
 describe("AuditPanel cancellation (E4-S6-AC6)", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("offers a reachable cancel control for a running audit and stops the analyzer child when activated", async () => {
-    cancelAuditMock.mockResolvedValue({
-      ok: true,
-      auditId: "audit_running-1",
+  it("derives its post-cancel display from refreshed canonical history rather than local outcome state (E4-S6-AC6)", async () => {
+    const onCancelAudit = vi.fn().mockResolvedValue(undefined);
+    const runningJob: AuditJob = {
+      id: "audit-running-to-cancelled",
+      sessionId: SESSION.id,
+      status: "running",
+      createdAt: "2026-01-01T09:10:00.000Z",
+    };
+    const cancelledJob: AuditJob = {
+      ...runningJob,
       status: "cancelled",
       reason: "the user stopped the analyzer",
-      cancelledAt: "2026-01-01T09:12:00.000Z",
-    });
+    };
     const user = userEvent.setup();
-
-    render(<AuditPanel audit={null} runningJob={{ id: "audit_running-1", status: "running" }} />);
-
-    await user.click(screen.getByRole("button", { name: "Cancel audit" }));
-
-    expect(cancelAuditMock).toHaveBeenCalledWith("audit_running-1");
-    expect(await screen.findByRole("status", { name: "Audit cancellation" })).toHaveTextContent(
-      "This audit was cancelled.",
+    const { rerender } = render(
+      <AuditPanel audit={null} auditJobs={[runningJob]} onCancelAudit={onCancelAudit} />,
     );
-  });
-
-  it("reports failure rather than silently succeeding when the child cannot be stopped", async () => {
-    cancelAuditMock.mockResolvedValue({
-      ok: false,
-      auditId: "audit_running-2",
-      reason: "no running analyzer child for this audit",
-    });
-    const user = userEvent.setup();
-
-    render(<AuditPanel audit={null} runningJob={{ id: "audit_running-2", status: "running" }} />);
 
     await user.click(screen.getByRole("button", { name: "Cancel audit" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not cancel the audit.");
+    await waitFor(() => expect(onCancelAudit).toHaveBeenCalledWith("audit-running-to-cancelled"));
+    expect(screen.queryByRole("status", { name: "Audit cancellation" })).not.toBeInTheDocument();
+
+    rerender(<AuditPanel audit={null} auditJobs={[cancelledJob]} onCancelAudit={onCancelAudit} />);
+
+    expect(screen.getByText("This audit was cancelled: the user stopped the analyzer")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Audit status: Cancelled" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel audit" })).not.toBeInTheDocument();
   });
 
   it("offers no cancel control, and no alternate not-offered explanation, when no audit is running", () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AuditPanel } from "@/components/audit/audit-panel";
+import { cancelAudit } from "@/server/audits/cancel";
 import type { AuditReport } from "@/server/audits/bundle-schema";
 import type { AuditJob } from "@/server/audits/types";
 import { GenerateAuditButton } from "@/components/audit/generate-audit-button";
@@ -69,6 +70,17 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
     [session.id],
   );
 
+  const cancelAndRefreshAudit = useCallback(
+    async (auditId: string) => {
+      try {
+        await cancelAudit(auditId);
+      } finally {
+        await refreshAuditHistory(session.id);
+      }
+    },
+    [refreshAuditHistory, session.id],
+  );
+
   useEffect(() => {
     setAuditHistory([]);
     setAuditHistorySessionId(session.id);
@@ -104,7 +116,7 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
         agentCount={liveSession.agentCount}
         toolCallCount={liveSession.toolCallCount}
       />
-      <AuditPanel audit={liveAudit} auditJobs={displayedAuditHistory} />
+      <AuditPanel audit={liveAudit} auditJobs={displayedAuditHistory} onCancelAudit={cancelAndRefreshAudit} />
       <EventStream sessionId={liveSession.id} />
       <AgentTree sessionId={liveSession.id} />
     </section>

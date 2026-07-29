@@ -1,8 +1,16 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { cancelAudit } from "@/server/audits/cancel";
 import type { AuditJob } from "@/server/audits/types";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 import { SessionDetail } from "./session-detail";
+
+vi.mock("@/server/audits/cancel", () => ({
+  cancelAudit: vi.fn(),
+}));
+
+const cancelAuditMock = vi.mocked(cancelAudit);
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -59,6 +67,7 @@ function mockAuditHistoryRequests(readHistory: () => readonly AuditJob[]) {
 
 afterEach(() => {
   FakeEventSource.instances = [];
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -132,6 +141,58 @@ describe("SessionDetail", () => {
     await waitFor(() => expect(within(auditPanel).getByLabelText("Audit progress")).toHaveTextContent("Running"));
     expect(within(auditPanel).getByText("Audit status: running.")).toBeInTheDocument();
     expect(within(auditPanel).getByRole("status", { name: "Audit status: Running" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(
+          ([input, init]) =>
+            input === `/api/audits?sessionId=${encodeURIComponent(session.id)}` && init?.cache === "no-store",
+        ),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("the actual SessionDetail cancellation initiator exposes the T75-proven branch and refreshes the canonical cancelled record (E4-S6-AC6)", async () => {
+    const cancellationReason = "the user stopped the analyzer";
+    let history: AuditJob[] = [
+      {
+        id: "audit-running-to-cancelled",
+        sessionId: session.id,
+        status: "running",
+        createdAt: "2026-01-01T09:10:00.000Z",
+      },
+    ];
+    const fetchMock = mockAuditHistoryRequests(() => history);
+    cancelAuditMock.mockImplementation(async (auditId) => {
+      history = [
+        {
+          ...history[0],
+          id: auditId,
+          status: "cancelled",
+          reason: cancellationReason,
+        },
+      ];
+
+      return {
+        ok: true,
+        auditId,
+        status: "cancelled",
+        reason: cancellationReason,
+        cancelledAt: "2026-01-01T09:12:00.000Z",
+      };
+    });
+    const user = userEvent.setup();
+
+    render(<SessionDetail session={session} />);
+
+    const auditPanel = screen.getByRole("region", { name: "Audit findings" });
+    await user.click(await within(auditPanel).findByRole("button", { name: "Cancel audit" }));
+
+    expect(cancelAuditMock).toHaveBeenCalledWith("audit-running-to-cancelled");
+    expect(
+      await within(auditPanel).findByText(`This audit was cancelled: ${cancellationReason}`),
+    ).toBeInTheDocument();
+    expect(within(auditPanel).getByRole("status", { name: "Audit status: Cancelled" })).toBeInTheDocument();
+    expect(within(auditPanel).queryByRole("button", { name: "Cancel audit" })).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.filter(

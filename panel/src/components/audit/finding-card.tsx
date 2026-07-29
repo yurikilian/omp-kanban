@@ -1,7 +1,11 @@
 import type { EstimatedSavings, Finding, ObservedImpact, SavingsRange } from "@/server/audits/bundle-schema";
+import { EvidenceLink } from "./evidence-link";
+import { ProvenanceLabel } from "./provenance-label";
 import { SeverityBadge } from "./severity-badge";
 
 export interface FindingCardProps {
+  /** Scopes each cited evidence record's link; omitted only in contexts with no audit to scope against. */
+  auditId?: string;
   finding: Finding;
 }
 
@@ -47,9 +51,28 @@ function SavingsRangeRow({ metric, range }: SavingsRangeRowProps) {
   );
 }
 
+interface UnavailableCostRowProps {
+  label: string;
+}
+
+function UnavailableCostRow({ label }: UnavailableCostRowProps) {
+  return (
+    <tr>
+      <th scope="row" className="pr-3 text-left font-medium">
+        {label}
+      </th>
+      <td colSpan={3} className="pl-2 text-muted-foreground">
+        Pricing unavailable
+      </td>
+    </tr>
+  );
+}
+
 function SavingsRanges({ savings }: { savings: EstimatedSavings }) {
   const hasSavings = savings.inputTokens || savings.outputTokens || savings.cost;
-  if (!hasSavings) return <p className="text-sm text-muted-foreground">Unavailable</p>;
+  if (!hasSavings) {
+    return <p className="text-sm text-muted-foreground">Pricing unavailable</p>;
+  }
 
   return (
     <table aria-label="Savings ranges" className="text-sm">
@@ -72,13 +95,13 @@ function SavingsRanges({ savings }: { savings: EstimatedSavings }) {
       <tbody>
         {savings.inputTokens ? <SavingsRangeRow metric="input" range={savings.inputTokens} /> : null}
         {savings.outputTokens ? <SavingsRangeRow metric="output" range={savings.outputTokens} /> : null}
-        {savings.cost ? <SavingsRangeRow metric="cost" range={savings.cost} /> : null}
+        {savings.cost ? <SavingsRangeRow metric="cost" range={savings.cost} /> : <UnavailableCostRow label="Cost" />}
       </tbody>
     </table>
   );
 }
 
-export function FindingCard({ finding }: FindingCardProps) {
+export function FindingCard({ auditId, finding }: FindingCardProps) {
   const headingId = `finding-${finding.id}`;
 
   return (
@@ -92,13 +115,34 @@ export function FindingCard({ finding }: FindingCardProps) {
       </h3>
       <p>{finding.summary}</p>
       <div>
-        <h4 className="text-sm font-medium">Observed impact</h4>
-        <p className="text-sm text-muted-foreground">{formatObservedImpact(finding.observedImpact)}</p>
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-medium">Observed impact</h4>
+          <ProvenanceLabel provenance="observed" />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {formatObservedImpact(finding.observedImpact)}
+          {finding.observedImpact.cost === null ? " · Pricing unavailable" : null}
+        </p>
       </div>
       <div>
-        <h4 className="text-sm font-medium">Estimated savings</h4>
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-medium">Estimated savings</h4>
+          <ProvenanceLabel provenance="estimated" />
+        </div>
         <SavingsRanges savings={finding.estimatedSavings} />
       </div>
+      {auditId && finding.evidenceIds.length > 0 ? (
+        <div>
+          <h4 className="text-sm font-medium">Evidence</h4>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1">
+            {finding.evidenceIds.map((evidenceId) => (
+              <li key={evidenceId}>
+                <EvidenceLink auditId={auditId} evidenceId={evidenceId} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </article>
   );
 }

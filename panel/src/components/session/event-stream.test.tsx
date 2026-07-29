@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../app/globals.css";
 import type { TimelineEvent } from "@/server/sessions/timeline";
@@ -115,5 +115,42 @@ describe("EventStream", () => {
     render(<EventStream sessionId="session-1" />);
 
     expect(await screen.findByText(/no events/i)).toBeInTheDocument();
+  });
+
+  it("wires J/K, Enter, Shift+Enter and Escape to the timeline cursor, expand state and inspector (E3-S11-AC2)", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mockFetchOnce({ ok: true, json: async () => ALL_EVENT_TYPES });
+
+    render(<EventStream sessionId="session-1" />);
+    await screen.findByText("Please refactor the billing module.");
+
+    const timeline = screen.getByLabelText("Session event timeline");
+    const firstRow = document.getElementById("session-event-s1") as HTMLElement;
+
+    // No cursor until the first navigation key, matching the underlying hook.
+    expect(firstRow).toHaveAttribute("aria-expanded", "false");
+
+    // J moves the cursor onto the first event and gives it a visible, testable indicator.
+    fireEvent.keyDown(timeline, { key: "j" });
+    expect(firstRow.style.outline).toBe("2px solid #3b82f6");
+
+    // Enter expands the cursor's event without opening the inspector.
+    fireEvent.keyDown(timeline, { key: "Enter" });
+    expect(firstRow).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByText("Event inspector")).not.toBeInTheDocument();
+
+    // Enter again collapses it back - a toggle, not a one-way expand.
+    fireEvent.keyDown(timeline, { key: "Enter" });
+    expect(firstRow).toHaveAttribute("aria-expanded", "false");
+
+    // Shift+Enter opens the inspector for the cursor's event, distinct from plain Enter.
+    fireEvent.keyDown(timeline, { key: "Enter", shiftKey: true });
+    expect(await screen.findByText("Event inspector")).toBeInTheDocument();
+    expect(screen.getByText("Event: s1")).toBeInTheDocument();
+
+    // Escape dismisses the inspector without losing the cursor's position on the timeline.
+    fireEvent.keyDown(timeline, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("Event inspector")).not.toBeInTheDocument());
+    expect(firstRow.style.outline).toBe("2px solid #3b82f6");
   });
 });

@@ -1,10 +1,25 @@
+import type { AuditLifecycleStatus } from "./audit-states";
+
 export interface SessionChange {
   sessionId: string;
 }
 
 export interface AuditChange {
   sessionId: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: AuditLifecycleStatus;
+}
+
+const AUDIT_LIFECYCLE_STATUSES: Record<AuditLifecycleStatus, true> = {
+  queued: true,
+  running: true,
+  completed: true,
+  failed: true,
+  cancelled: true,
+  insufficient_signal: true,
+};
+
+function isAuditLifecycleStatus(status: string): status is AuditLifecycleStatus {
+  return Object.hasOwn(AUDIT_LIFECYCLE_STATUSES, status);
 }
 
 type SessionChangeListener = (change: SessionChange) => void;
@@ -42,9 +57,9 @@ function parseAuditChange(data: string): AuditChange | null {
       typeof value.sessionId === "string" &&
       "status" in value &&
       typeof value.status === "string" &&
-      ["queued", "running", "completed", "failed"].includes(value.status)
+      isAuditLifecycleStatus(value.status)
     ) {
-      return value as AuditChange;
+      return { sessionId: value.sessionId, status: value.status };
     }
   } catch {
     return null;

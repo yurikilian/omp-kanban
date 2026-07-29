@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { subscribeToSessionChanges } from "./live-stream";
+import { subscribeToAuditChanges, subscribeToSessionChanges } from "./live-stream";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -54,5 +54,28 @@ describe("subscribeToSessionChanges", () => {
 
     unsubscribeSecond();
     expect(stream.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("subscribeToAuditChanges", () => {
+  it("carries only canonical persisted lifecycle statuses and rejects other stream values (E4-S6-AC2, E4-S6-AC3, E4-S6-AC4, E4-S6-AC5)", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const subscriber = vi.fn();
+    const unsubscribe = subscribeToAuditChanges(subscriber);
+    const stream = FakeEventSource.instances[0];
+    const statuses = ["queued", "running", "completed", "failed", "cancelled", "insufficient_signal"] as const;
+
+    for (const status of statuses) {
+      stream.emit("audit-change", JSON.stringify({ sessionId: "session-1", status }));
+    }
+    stream.emit("audit-change", JSON.stringify({ sessionId: "session-1", status: "interrupted" }));
+    stream.emit("audit-change", JSON.stringify({ sessionId: "session-1", status: "invented" }));
+
+    expect(subscriber).toHaveBeenCalledTimes(statuses.length);
+    expect(subscriber.mock.calls.map(([change]) => change)).toEqual(
+      statuses.map((status) => ({ sessionId: "session-1", status })),
+    );
+
+    unsubscribe();
   });
 });

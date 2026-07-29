@@ -7,12 +7,15 @@
 #   ./install.sh --project        install into ./.omp for this repo only
 #   ./install.sh --apply-config   merge the recommended omp settings into
 #                                 config.yml (backs it up first; opt-in)
-#   ./install.sh --uninstall      remove previously installed files
-#   ./install.sh --dry-run        show what would happen, change nothing
+#   ./install.sh --with-panel     also install and build the panel/ web app
+#                                 (npm install + next build; heavier, opt-in)
+#   ./install.sh --uninstall     remove previously installed files
+#   ./install.sh --dry-run       show what would happen, change nothing
 #
-# The guardrails hook (hooks/pre/kb-guardrails.ts) is installed always, not
-# behind a flag. It only inspects `task` calls spawning kb-* agents, so it is
-# inert in every session that is not running the board.
+# The guardrails hook (hooks/pre/kb-guardrails.ts) and the panel launcher hook
+# (hooks/pre/kb-panel.ts) are installed always, not behind a flag — the panel
+# hook only spawns the panel app if $ROOT/panel is actually built, which is
+# why the app itself stays behind --with-panel.
 
 set -euo pipefail
 
@@ -21,15 +24,17 @@ SCOPE="user"
 DRY=0
 UNINSTALL=0
 APPLY_CONFIG=0
+WITH_PANEL=0
 
 for arg in "$@"; do
   case "$arg" in
     --project)   SCOPE="project" ;;
     --user)      SCOPE="user" ;;
     --apply-config) APPLY_CONFIG=1 ;;
+    --with-panel) WITH_PANEL=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --dry-run|-n) DRY=1 ;;
-    -h|--help)   sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -75,6 +80,10 @@ if [ "$UNINSTALL" -eq 1 ]; then
       say "  removed hooks/pre/$h"
     fi
   done
+  if [ -d "$ROOT/panel" ]; then
+    run rm -rf "$ROOT/panel"
+    say "  removed panel/"
+  fi
   if [ -e "$ROOT/omp-kanban-guardrails.yml" ]; then
     run rm -f "$ROOT/omp-kanban-guardrails.yml"
     say "  removed omp-kanban-guardrails.yml"
@@ -134,6 +143,31 @@ done
 # `omp --config`. --apply-config merges them into config.yml instead.
 run cp "$SRC/guardrails/omp-config.recommended.yml" "$ROOT/omp-kanban-guardrails.yml"
 say "  omp-kanban-guardrails.yml (overlay; not applied unless you ask)"
+
+# ---------------------------------------------------- panel (opt-in, heavy)
+# kb-panel.ts resolves its app two directories up from itself — $ROOT/panel —
+# and no-ops if that isn't a built install (see panelInstalled() in the hook).
+# Building it here is an `npm install` + `next build` on every install run,
+# so it stays behind --with-panel instead of happening unconditionally.
+if [ "$WITH_PANEL" -eq 1 ]; then
+  say ""
+  say "Installing panel/ (npm install + next build)…"
+  PANEL_DIR="$ROOT/panel"
+  run rm -rf "$PANEL_DIR"
+  run mkdir -p "$PANEL_DIR"
+  if command -v rsync >/dev/null 2>&1; then
+    run rsync -a --exclude node_modules --exclude .next "$SRC/panel/" "$PANEL_DIR/"
+  else
+    run cp -r "$SRC/panel/." "$PANEL_DIR/"
+    run rm -rf "$PANEL_DIR/node_modules" "$PANEL_DIR/.next"
+  fi
+  if [ "$DRY" -eq 1 ]; then
+    say "  would: npm install && npm run build (in $PANEL_DIR)"
+  else
+    ( cd "$PANEL_DIR" && npm install && npm run build )
+    say "  panel/ installed and built at $PANEL_DIR"
+  fi
+fi
 
 # ---------------------------------------------------------- config (opt-in)
 # Deliberately opt-in and deliberately non-destructive: these are omp's own

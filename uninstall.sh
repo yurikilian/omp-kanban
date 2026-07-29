@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # omp-kanban uninstaller
 #
-# Removes the agents, skill, and (if present) the dashboard hook + vendored app
+# Removes the agents, skill, and (if present) the panel hook + vendored app
 # that install.sh copied into an omp discovery root.
 #
 #   ./uninstall.sh              remove from the user root (~/.omp/agent)
@@ -12,8 +12,9 @@
 #
 # This is a thin wrapper over `install.sh --uninstall`: the removal logic lives
 # in exactly one place so the two scripts cannot drift apart (see CLAUDE.md).
-# The dashboard's runtime state (~/.omp/agent/dashboard/, including dashboard.db)
-# is intentionally left in place — remove it by hand if you want it gone.
+# The panel's runtime state (~/.omp/agent/panel/, holding state.json and the
+# lock directory) is intentionally left in place — remove it by hand if you
+# want it gone.
 
 set -euo pipefail
 
@@ -21,7 +22,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 for arg in "$@"; do
   case "$arg" in
-    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   esac
 done
 

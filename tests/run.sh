@@ -7,8 +7,8 @@
 # the run-state helper is stdlib Python, the dispatch hook is TypeScript that
 # Node runs directly via type stripping (Node 22.6+).
 #
-# The vendored dashboard has its own vitest suites and is not covered here —
-# it is optional, opt-in, and unrelated to the board.
+# The vendored panel has its own vitest and Playwright suites and is not
+# covered here — it is optional, opt-in, and unrelated to the board.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

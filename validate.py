@@ -23,7 +23,7 @@ ROOT = Path(__file__).parent
 AGENTS = ROOT / "agents"
 SKILLS = ROOT / "skills"
 HOOKS = ROOT / "hooks"
-DASHBOARD = ROOT / "dashboard"
+PANEL = ROOT / "panel"
 
 # omp ships these; a same-named file silently overrides them. The confirmed set
 # comes from ~/.omp/agent/agents/ (designer, librarian, reviewer, scout, sonic,
@@ -60,11 +60,11 @@ NOT_AGENTS = {"kb-db"}
 
 # Dead JSON artifact names the SQLite migration deleted the producers of.
 # qa-e2e-results.json is raw Playwright reporter output, not a migrated
-# artifact, and dashboard/state.json belongs to the unrelated vendored app.
+# artifact, and panel/state.json is the panel launcher hook's singleton record.
 DEAD_ARTIFACTS = re.compile(
     r"state\.json|intake\.json|todo\.json|backlog\.json|qa-report\.json|"
     r"release\.json|findings\.json|critique\.json|verdict\.json|progress/")
-DEAD_ARTIFACT_EXEMPT = re.compile(r"qa-e2e-results\.json|dashboard/state\.json")
+DEAD_ARTIFACT_EXEMPT = re.compile(r"qa-e2e-results\.json|panel/state\.json")
 
 errors, warnings = [], []
 
@@ -342,15 +342,16 @@ def check_hooks():
     return rows
 
 
-def check_dashboard():
-    """The vendored dashboard is optional. If present, its entry points must be
-    intact — node_modules and web/dist are built at install time, not required."""
-    if not DASHBOARD.is_dir():
+def check_panel():
+    """The panel app is optional and vendored. If present, the entry points the
+    launcher hook resolves must be intact — node_modules and .next are built at
+    install time (--with-panel), so they are not required here."""
+    if not PANEL.is_dir():
         return
-    for req in ("server/src/index.js", "package.json"):
-        if not (DASHBOARD / req).exists():
+    for req in ("package.json", "next.config.ts", "runtime/start.mjs"):
+        if not (PANEL / req).exists():
             errors.append(
-                f"dashboard/: missing {req} — the vendored app looks incomplete")
+                f"panel/: missing {req} — the vendored app looks incomplete")
 
 
 def main():
@@ -402,7 +403,7 @@ def main():
 
     check_manifest()
     hooks = check_hooks()
-    check_dashboard()
+    check_panel()
     check_helper()
     check_guardrails()
 
@@ -413,8 +414,8 @@ def main():
             print(f"{name:<{w0}}{model:<10}{ret}")
         for path, events in hooks:
             print(f"{path:<{w0}}{'hook':<10}{events}")
-        if DASHBOARD.is_dir():
-            print(f"{'dashboard/':<{w0}}{'app':<10}vendored web app")
+        if PANEL.is_dir():
+            print(f"{'panel/':<{w0}}{'app':<10}vendored next app")
         print()
         for w in warnings:
             print(f"warning: {w}")

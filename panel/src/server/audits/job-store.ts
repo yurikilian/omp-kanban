@@ -24,6 +24,16 @@ export interface CreateAuditJobOptions {
   pricing?: AuditPricing;
 }
 
+function isTerminalAuditJob(status: StoredAuditJob["status"]): boolean {
+  return (
+    status === "completed" ||
+    status === "insufficient_signal" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "interrupted"
+  );
+}
+
 function compareAuditJobs(left: StoredAuditJob, right: StoredAuditJob): number {
   const createdAtComparison = left.createdAt.localeCompare(right.createdAt);
   return createdAtComparison || left.id.localeCompare(right.id);
@@ -53,12 +63,19 @@ export function initializeAuditJobStore(): void {
   hasIndexedAuditJobs = true;
 }
 
-function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): void {
+function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): StoredAuditJob | null {
   const currentJob = auditJobById.get(id);
-  if (!currentJob) return;
+  if (!currentJob || isTerminalAuditJob(currentJob.status)) return null;
 
-  storeAuditJob({ ...currentJob, ...updates });
+  const updatedJob = { ...currentJob, ...updates };
+  storeAuditJob(updatedJob);
   persistAuditJobs();
+  return updatedJob;
+}
+
+export function cancelAuditJob(auditJobId: string, reason: string): StoredAuditJob | null {
+  ensureRecoveredAuditJobs();
+  return updateAuditJob(auditJobId, { status: "cancelled", reason });
 }
 
 export function rehydrateAuditJobs(jobs: readonly StoredAuditJob[]): void {

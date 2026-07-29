@@ -185,8 +185,11 @@ The full lifecycle (spec section 9):
 queued -> running -> one of: completed | failed | cancelled | insufficient_signal
 ```
 
-Only the four terminal values ever appear in a bundle's `manifest.json`, and
-only three of those are `kb-forensics`'s own to write:
+A valid, complete bundle's `manifest.json` uses only the terminal values that
+`kb-forensics` writes: `completed`, `insufficient_signal`, or `failed`.
+`cancelled` is terminal only in the job service's canonical durable record;
+the files a stopped analyzer leaves behind can be incomplete and are not a
+cancelled bundle format.
 
 | Status | Who records it | Where |
 |---|---|---|
@@ -196,16 +199,16 @@ only three of those are `kb-forensics`'s own to write:
 | `insufficient_signal` | `kb-forensics` | `manifest.json` — analysis finished; the target was genuinely too small to say anything useful about |
 | `failed` (self-detected) | `kb-forensics` | `manifest.json`, with `failureSummary` — analysis could not proceed at all, e.g. an unreadable transcript |
 | `failed` (crash) | job service | its own job record, from a non-zero exit or a missing manifest — `kb-forensics` never got the chance to write anything |
-| `cancelled` | job service | its own job record, after stopping the analyzer child |
+| `cancelled` | job service | the canonical durable job record, with its reason, after stopping the registered analyzer child |
 
 `insufficient_signal` is not a failure and is not a completed audit with zero
 findings — it is its own outcome, and the panel is expected to label it
 distinctly rather than folding it into either of the other two. Never
 manufacture a finding to avoid reaching it.
 
-The job service's own job-record store — where `queued`, `running` and
-`cancelled` live — is a separate concern from this bundle contract and is not
-decided here.
+The job service persists one canonical durable job record beside the bundles.
+It is authoritative for `queued`, `running`, `cancelled`, `interrupted`, and
+job-service failures that do not produce a complete bundle.
 
 ## `audit.json`
 
@@ -331,22 +334,18 @@ conformance schema that enforces all of this are pinned down alongside
 
 ## What this contract does not cover
 
-- **Where the job service's own job records live** — a runtime file store
-  beside the bundles, or a small database. Deferred until restart recovery
-  needs it decided.
-- **How a cancelled bundle (if any) differs from this document.** Resolved
-  (E4-S6-AC6): it doesn't, because there is no cancelled bundle shape.
-  Killing the analyzer child mid-run leaves the bundle directory with some
-  subset of the four canonical files missing — the same "not finished being
-  written yet" state a still-running audit is in — which `validate.ts`
-  already resolves to `status: "incomplete"` (E4-S5-AC4), distinct from
-  `status: "valid"`. That distinction was observed directly, not assumed:
-  it is what the existing bundle validator does with any directory missing
-  one of the four files, cancelled or not. `cancelled` is recorded once,
-  by `panel/src/server/audits/cancel.ts`, in the job service's own record
-  after it stops the child — the partial bundle on disk, if the child got
-  far enough to write anything, is simply never read as authoritative for
-  a cancelled audit.
+- **How a cancelled bundle differs from this document.** Resolved
+  (E4-S6-AC6): there is no cancelled bundle shape. The observed cancellation
+  proof dispatched an analyzer-compatible child, waited until it had written
+  `manifest.json` and `audit.json`, then sent `SIGTERM`. The child exited with
+  `SIGTERM`; `report.md` and `evidence.jsonl` were absent; and
+  `validateAuditBundle` returned exactly
+  `status: "incomplete"` with those two missing files. That proves this
+  partial state is distinguishably unfinished, not valid. It does not establish
+  cancellation behavior after all four canonical files exist. After stopping
+  the child, the job service atomically records `cancelled` and its reason in
+  the canonical durable job record; a partial directory is never treated as an
+  authoritative cancelled bundle.
 - **Schema versions beyond `1`.** `schemaVersion` exists so a future,
   incompatible change can be introduced without breaking readers of older
   bundles; nothing here assumes what a `2` would change.

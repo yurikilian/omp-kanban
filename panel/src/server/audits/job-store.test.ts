@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +24,7 @@ const PERSISTED_AUDIT_STATUSES = [
 type PersistedAuditStatus = (typeof PERSISTED_AUDIT_STATUSES)[number];
 
 let temporaryHome: string | undefined;
+const spawnedChildren: ChildProcess[] = [];
 
 function createAuditsRoot(): string {
   temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-audit-history-"));
@@ -29,7 +32,23 @@ function createAuditsRoot(): string {
   return path.join(temporaryHome, ".omp", "forensics", "audits");
 }
 
+function waitForSpawn(child: ChildProcess): Promise<void> {
+  const { promise, reject, resolve } = Promise.withResolvers<void>();
+  child.once("spawn", resolve);
+  child.once("error", reject);
+  return promise;
+}
+
+function waitForExit(child: ChildProcess): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  const { promise, resolve } = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
+  child.once("exit", (code, signal) => resolve({ code, signal }));
+  return promise;
+}
+
 afterEach(() => {
+  for (const child of spawnedChildren.splice(0)) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
   vi.doUnmock("./startup-index");
   vi.doUnmock("./dispatch");
   vi.resetModules();
@@ -89,6 +108,46 @@ describe("audit job store", () => {
     const { getAuditJobsForSession } = await import("./job-store");
 
     await expect(getAuditJobsForSession(SESSION_ID)).resolves.toEqual(history);
+  });
+
+  it("retains a direct service cancellation reason in reloaded canonical history after the child exits (E4-S6-AC4, E4-S6-AC6)", async () => {
+    const auditId = "audit_cancelled_after_reload";
+    const reason = "the user stopped the analyzer";
+    const auditsRoot = createAuditsRoot();
+    writeAuditJobRecords(
+      [
+        {
+          id: auditId,
+          sessionId: SESSION_ID,
+          status: "running",
+          createdAt: "2026-01-01T09:12:00.000Z",
+        },
+      ],
+      auditsRoot,
+    );
+    vi.resetModules();
+    // Dynamic imports create an isolated service cache under the temporary home.
+    const [{ registerRunningAuditChild }, { cancelAudit }] = await Promise.all([import("./dispatch"), import("./cancel")]);
+    const child = spawn(process.execPath, ["-e", "process.stdin.resume()"]);
+    spawnedChildren.push(child);
+    await waitForSpawn(child);
+    registerRunningAuditChild(auditId, child);
+
+    const exited = waitForExit(child);
+    await expect(cancelAudit(auditId, reason)).resolves.toMatchObject({
+      ok: true,
+      auditId,
+      status: "cancelled",
+      reason,
+    });
+    await expect(exited).resolves.toEqual({ code: null, signal: "SIGTERM" });
+
+    vi.resetModules();
+    // Dynamic import reads the persisted cancellation from a fresh runtime cache.
+    const { getAuditJobsForSession } = await import("./job-store");
+    await expect(getAuditJobsForSession(SESSION_ID)).resolves.toEqual([
+      expect.objectContaining({ id: auditId, status: "cancelled", reason }),
+    ]);
   });
 
   it("reads reloaded history from durable records without request-time bundle indexing (E4-S6-AC4)", async () => {

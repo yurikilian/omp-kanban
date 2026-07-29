@@ -133,4 +133,46 @@ describe("AuditPanel cancellation (E4-S6-AC6)", () => {
 
     expect(screen.queryByRole("button", { name: "Cancel audit" })).not.toBeInTheDocument();
   });
+
+  it("keeps queued progress visible without offering a cancellation that has no analyzer child (E4-S6-AC6)", () => {
+    render(
+      <AuditPanel
+        audit={null}
+        auditJobs={[
+          {
+            id: "audit-queued",
+            sessionId: SESSION.id,
+            status: "queued",
+            createdAt: "2026-01-01T09:10:00.000Z",
+          },
+        ]}
+        onCancelAudit={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByLabelText("Audit progress")).toHaveTextContent("Queued");
+    expect(screen.queryByRole("button", { name: "Cancel audit" })).not.toBeInTheDocument();
+  });
+
+  it("explains a failed analyzer with empty stderr by its exit status (E4-S6-AC2, E4-S6-AC4)", () => {
+    render(
+      <AuditPanel
+        audit={null}
+        auditJobs={[
+          {
+            id: "audit-empty-stderr",
+            sessionId: SESSION.id,
+            status: "failed",
+            createdAt: "2026-01-01T09:10:00.000Z",
+            exitStatus: 1,
+            stderrSummary: "",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("alert", { name: "Audit status: Failed" })).toHaveTextContent(
+      "This audit failed: The analyzer exited with status 1.",
+    );
+  });
 });

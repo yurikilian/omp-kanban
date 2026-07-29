@@ -47,4 +47,26 @@ describe("watchAudits", () => {
     await vi.waitFor(() => expect(changes).toEqual(expect.arrayContaining(expected)));
     expect(changes).toHaveLength(expected.length);
   });
+  it("creates a missing audit root before watching so the first lifecycle change is delivered (E4-S6-AC5)", async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-audit-watcher-missing-"));
+    await fs.rm(root, { recursive: true, force: true });
+    const changes: AuditChange[] = [];
+
+    watcher = watchAudits((change) => changes.push(change), root);
+    writeAuditJobRecords(
+      [
+        {
+          id: "audit-first-queued",
+          sessionId: "session-first-audit",
+          status: "queued",
+          createdAt: "2026-01-01T09:00:00.000Z",
+        },
+      ],
+      root,
+    );
+
+    await vi.waitFor(() =>
+      expect(changes).toContainEqual({ sessionId: "session-first-audit", status: "queued" }),
+    );
+  });
 });

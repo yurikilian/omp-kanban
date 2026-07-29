@@ -20,6 +20,17 @@ export interface AuditPanelProps {
   onCancelAudit?: (auditId: string) => Promise<void>;
 }
 
+function failureReasonForAuditJob(auditJob: AuditJob): string {
+  const durableReason = [auditJob.failureSummary, auditJob.stderrSummary, auditJob.reason].find(
+    (reason): reason is string => typeof reason === "string" && reason.trim().length > 0,
+  );
+  if (durableReason) return durableReason;
+
+  return typeof auditJob.exitStatus === "number"
+    ? `The analyzer exited with status ${auditJob.exitStatus}.`
+    : "The analyzer stopped before completing the audit.";
+}
+
 function stateInputForAuditJob(auditJob: AuditJob): AuditStateInput | null {
   switch (auditJob.status) {
     case "queued":
@@ -35,11 +46,7 @@ function stateInputForAuditJob(auditJob: AuditJob): AuditStateInput | null {
     case "failed":
       return {
         status: "failed",
-        failureReason:
-          auditJob.failureSummary ??
-          auditJob.stderrSummary ??
-          auditJob.reason ??
-          "No failure reason was recorded.",
+        failureReason: failureReasonForAuditJob(auditJob),
         retryAvailable: true,
       };
     default:
@@ -61,12 +68,13 @@ function latestAuditInProgress(auditJobs: readonly AuditJob[]): AuditPanelRunnin
 export function AuditPanel({ audit, auditJobs = [], runningJob = null, onCancelAudit }: AuditPanelProps) {
   const [isCancelling, startCancelling] = useTransition();
   const activeJob = runningJob ?? latestAuditInProgress(auditJobs);
+  const cancellableAuditId = activeJob?.status === "running" ? activeJob.id : null;
 
   function handleCancel() {
-    if (!activeJob || !onCancelAudit) return;
+    if (!cancellableAuditId || !onCancelAudit) return;
 
     startCancelling(async () => {
-      await onCancelAudit(activeJob.id);
+      await onCancelAudit(cancellableAuditId);
     });
   }
 
@@ -76,7 +84,7 @@ export function AuditPanel({ audit, auditJobs = [], runningJob = null, onCancelA
     <section role="region" aria-label="Audit findings" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Audit findings</h2>
-        {activeJob && onCancelAudit ? (
+        {cancellableAuditId && onCancelAudit ? (
           <button
             type="button"
             aria-label="Cancel audit"

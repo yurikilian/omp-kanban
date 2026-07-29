@@ -1,4 +1,4 @@
-import { watch } from "node:fs";
+import { mkdirSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AuditLifecycleStatus } from "@/lib/audit-states";
@@ -45,6 +45,8 @@ export function watchAudits(
   onAuditChange: (change: AuditChange) => void,
   root: string = DEFAULT_AUDITS_ROOT,
 ): AuditWatcher {
+  mkdirSync(root, { recursive: true });
+
   let previousJobs = new Map(readAuditJobRecords(root).map((job) => [job.id, job]));
 
   const watcher = watch(root, { recursive: true }, (_eventType, filename) => {

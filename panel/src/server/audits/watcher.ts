@@ -9,6 +9,7 @@ import {
 } from "./startup-index";
 
 const DEFAULT_AUDITS_ROOT = path.join(os.homedir(), ".omp", "forensics", "audits");
+const RECONCILIATION_INTERVAL_MS = 100;
 
 export interface AuditChange {
   sessionId: string;
@@ -48,6 +49,19 @@ export function watchAudits(
   mkdirSync(root, { recursive: true });
 
   let previousJobs = new Map(readAuditJobRecords(root).map((job) => [job.id, job]));
+  let closed = false;
+
+  const reconcile = () => {
+    if (closed) return;
+
+    const jobs = readAuditJobRecords(root);
+    for (const job of jobs) {
+      if (isAuditLifecycleStatus(job.status) && hasRelevantRecordChange(previousJobs.get(job.id), job)) {
+        onAuditChange({ sessionId: job.sessionId, status: job.status });
+      }
+    }
+    previousJobs = new Map(jobs.map((job) => [job.id, job]));
+  };
 
   const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
     if (
@@ -57,14 +71,17 @@ export function watchAudits(
       return;
     }
 
-    const jobs = readAuditJobRecords(root);
-    for (const job of jobs) {
-      if (isAuditLifecycleStatus(job.status) && hasRelevantRecordChange(previousJobs.get(job.id), job)) {
-        onAuditChange({ sessionId: job.sessionId, status: job.status });
-      }
-    }
-    previousJobs = new Map(jobs.map((job) => [job.id, job]));
+    reconcile();
   });
+  reconcile();
+  const reconciliationTimer = setInterval(reconcile, RECONCILIATION_INTERVAL_MS);
 
-  return { close: () => watcher.close() };
+  return {
+    close: () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(reconciliationTimer);
+      watcher.close();
+    },
+  };
 }

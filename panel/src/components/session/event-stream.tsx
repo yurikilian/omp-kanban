@@ -11,6 +11,7 @@ import { ToolCallEvent } from "@/components/events/tool-call-event";
 import { useWindowedEvents } from "@/hooks/use-windowed-events";
 import { useTimelineKeyboard } from "@/hooks/use-timeline-keyboard";
 import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionEventUrl } from "@/lib/session-url";
+import { LiveRegion } from "@/components/layout/live-region";
 import { MissingEventNotice } from "./missing-event-notice";
 import { ReturnToLive } from "./return-to-live";
 import { useFollowLive } from "@/hooks/use-follow-live";
@@ -231,6 +232,20 @@ export function EventStream({ sessionId }: EventStreamProps) {
     onClear: clearSelectedEvent,
   });
 
+  // The cursor moves without ever moving real DOM focus off the timeline
+  // container (see the outline-only indicator below), so a screen reader
+  // has nothing else to announce the move by - an explicit live region
+  // speaks each new cursor position without stealing focus (E3-S11-AC4).
+  const cursorAnnouncement = useMemo(() => {
+    if (focusedEventId === undefined) return "";
+
+    const index = eventIds.indexOf(focusedEventId);
+    const focusedEvent = visibleEvents[index];
+    if (index < 0 || !focusedEvent) return "";
+
+    return `Event ${index + 1} of ${eventIds.length}: ${eventInspectorText(focusedEvent)}`;
+  }, [eventIds, focusedEventId, visibleEvents]);
+
   useEffect(() => {
     if (state.status !== "ready" || !selectedEvent) return;
 
@@ -296,6 +311,7 @@ export function EventStream({ sessionId }: EventStreamProps) {
   return (
     <>
       {selectedEventId && !selectedEvent && <MissingEventNotice eventId={selectedEventId} />}
+      <LiveRegion message={cursorAnnouncement} />
       {selectedEvent && (
         <aside data-slot="event-inspector" aria-label="Selected event" className="rounded-md border p-3 text-sm">
           <h2 className="font-medium">Event inspector</h2>

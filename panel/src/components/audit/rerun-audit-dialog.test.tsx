@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe("GenerateAuditButton rerun flow", () => {
   it("offers the in-flight audit rather than starting another one (E4-S2-AC4)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => AUDIT_JOB }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [AUDIT_JOB] }));
 
     render(<GenerateAuditButton sessionId={SESSION_ID} sessionTitle={SESSION_TITLE} />);
 
@@ -57,7 +57,7 @@ describe("GenerateAuditButton rerun flow", () => {
   it("posts an explicit rerun and surfaces its new audit id (E4-S2-AC2)", async () => {
     const rerunJob = { ...AUDIT_JOB, id: "audit_00000000-0000-4000-8000-000000000002" };
     const fetchMock = vi.fn((_: string, options?: RequestInit) =>
-      Promise.resolve({ ok: true, status: 200, json: async () => (options ? rerunJob : AUDIT_JOB) }),
+      Promise.resolve({ ok: true, status: 200, json: async () => (options ? rerunJob : [AUDIT_JOB]) }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();

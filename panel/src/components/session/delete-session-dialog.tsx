@@ -2,6 +2,26 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+interface DeleteFailure {
+  message: string;
+  /** A transient server or disk error is worth retrying; a rejected request is not. */
+  retryable: boolean;
+}
+
+/**
+ * The server's own explanation of what failed, so the dialog reports the real
+ * cause rather than a generic message (E3-S5-AC5).
+ */
+async function failureMessage(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => undefined);
+
+  if (typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" && body.error) {
+    return body.error;
+  }
+
+  return `The delete request failed with status ${response.status}.`;
+}
+
 interface DeleteSessionDialogProps {
   sessionId: string;
   sessionTitle: string;
@@ -11,7 +31,7 @@ interface DeleteSessionDialogProps {
 export function DeleteSessionDialog({ sessionId, sessionTitle, onDeleted }: DeleteSessionDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DeleteFailure | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
@@ -28,19 +48,6 @@ export function DeleteSessionDialog({ sessionId, sessionTitle, onDeleted }: Dele
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isDeleting) {
-        event.preventDefault();
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("keydown", dismissOnEscape);
-    return () => document.removeEventListener("keydown", dismissOnEscape);
-  }, [isDeleting, isOpen]);
 
   const deleteSession = async () => {
     setIsDeleting(true);
@@ -48,12 +55,19 @@ export function DeleteSessionDialog({ sessionId, sessionTitle, onDeleted }: Dele
 
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Delete request failed");
+      // A failed delete leaves the row in place: only a 2xx means the
+      // transcript and its sub-agent directory are both gone (see
+      // server/sessions/delete.ts), so a partial removal reports as a failure.
+      if (!response.ok) {
+        setError({ message: await failureMessage(response), retryable: response.status >= 500 });
+        setIsDeleting(false);
+        return;
+      }
 
       setIsOpen(false);
       onDeleted();
     } catch {
-      setError(`Could not delete ${sessionTitle}.`);
+      setError({ message: `Could not reach the server to delete ${sessionTitle}.`, retryable: true });
       setIsDeleting(false);
     }
   };
@@ -77,6 +91,13 @@ export function DeleteSessionDialog({ sessionId, sessionTitle, onDeleted }: Dele
             aria-labelledby={headingId}
             aria-describedby={descriptionId}
             className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !isDeleting) {
+                event.preventDefault();
+                event.stopPropagation();
+                setIsOpen(false);
+              }
+            }}
           >
             <h2 id={headingId} className="text-lg font-semibold">
               Delete {sessionTitle}?
@@ -86,7 +107,7 @@ export function DeleteSessionDialog({ sessionId, sessionTitle, onDeleted }: Dele
             </p>
             {error ? (
               <p role="alert" className="mt-3 text-sm text-destructive">
-                {error}
+                {error.message} {error.retryable ? "You can try again." : "Retrying will not help."}
               </p>
             ) : null}
             <div className="mt-6 flex justify-end gap-3">

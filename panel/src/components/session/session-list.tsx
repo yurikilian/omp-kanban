@@ -6,6 +6,7 @@ import { useLiveSessions } from "@/hooks/use-live-sessions";
 import { partitionPinned, sortSessions, type SessionSortKey, type SessionSortState } from "@/lib/session-query";
 import "@/styles/table.css";
 import type { SessionSummary } from "@/server/sessions/types";
+import { DeleteSessionDialog } from "./delete-session-dialog";
 import { PinControl } from "./pin-control";
 import { SessionSort } from "./session-sort";
 
@@ -71,6 +72,7 @@ function MetricCell({ value, format }: { value: number | null; format: (value: n
  */
 export function SessionList({ sessions, sort, onSortChange, onOpenSession }: SessionListProps) {
   const [liveSessions, setLiveSessions] = useState(() => newestFirst(sessions));
+  const [deletionAnnouncement, setDeletionAnnouncement] = useState("");
 
   useEffect(() => {
     setLiveSessions(newestFirst(sessions));
@@ -209,6 +211,16 @@ export function SessionList({ sessions, sort, onSortChange, onOpenSession }: Ses
     if (session) openSession(session.id);
   });
 
+  // A deleted session's row leaves the list immediately and the removal is
+  // announced to assistive technology (E3-S5-AC3). Keyboard selection needs
+  // no explicit recovery here: useListKeyboard clamps focusedIndex when the
+  // row count drops, so focus lands on a valid neighbouring row (E3-S5-AC4),
+  // and the detail route answers notFound() for a session that is gone.
+  const removeSession = useCallback((sessionId: string, sessionTitle: string) => {
+    setLiveSessions((currentSessions) => currentSessions.filter((session) => session.id !== sessionId));
+    setDeletionAnnouncement(`Deleted ${sessionTitle}.`);
+  }, []);
+
   const renderRow = (session: SessionSummary, index: number) => (
     <tr
       key={session.id}
@@ -248,6 +260,17 @@ export function SessionList({ sessions, sort, onSortChange, onOpenSession }: Ses
           pinned={pinnedSessionIds.has(session.id)}
           sessionTitle={session.title}
           onToggle={() => togglePin(session.id)}
+        />
+      </td>
+      <td
+        className="px-3 py-2 text-right"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <DeleteSessionDialog
+          sessionId={session.id}
+          sessionTitle={session.title}
+          onDeleted={() => removeSession(session.id, session.title)}
         />
       </td>
     </tr>
@@ -290,12 +313,15 @@ export function SessionList({ sessions, sort, onSortChange, onOpenSession }: Ses
           <th scope="col" className="px-3 py-2 text-right font-medium">
             <span className="sr-only">Pin</span>
           </th>
+          <th scope="col" className="px-3 py-2 text-right font-medium">
+            <span className="sr-only">Actions</span>
+          </th>
         </tr>
       </thead>
       <tbody {...containerKeyDownProps}>
         {pinned.length > 0 && (
           <tr className="border-b border-border">
-            <th scope="rowgroup" colSpan={10} className="bg-muted/50 px-3 py-1 text-left text-xs font-medium text-muted-foreground">
+            <th scope="rowgroup" colSpan={11} className="bg-muted/50 px-3 py-1 text-left text-xs font-medium text-muted-foreground">
               Pinned
             </th>
           </tr>
@@ -304,6 +330,9 @@ export function SessionList({ sessions, sort, onSortChange, onOpenSession }: Ses
         {unpinned.map((session, index) => renderRow(session, index + pinned.length))}
       </tbody>
       </table>
+      <div role="status" aria-live="polite" className="sr-only">
+        {deletionAnnouncement}
+      </div>
     </>
   );
 }

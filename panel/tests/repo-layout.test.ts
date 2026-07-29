@@ -4,10 +4,10 @@ import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 /**
- * Filenames common enough that every sub-project in this repository
- * legitimately ships its own copy (panel/, dashboard/, and the repository
- * root). A same-named file at another level is not evidence of a leaked
- * panel source file, so these are exempt from the duplicate-path check.
+ * Filenames common enough that both the panel and the repository root
+ * legitimately ship their own copy. A same-named file at another level is
+ * not evidence of a leaked panel source file, so these are exempt from the
+ * duplicate-path check.
  */
 const AMBIENT_BASENAMES: Record<string, true> = {
   "package.json": true,
@@ -22,9 +22,9 @@ interface LayoutViolation {
 
 /**
  * Every panel-tracked file must resolve under panel/, and none of them may
- * have a same-relative-path sibling under dashboard/ or the repository root
- * - the two places a leaked panel source file would land. Ambient filenames
- * every sub-project legitimately owns a copy of are exempt.
+ * have a same-relative-path sibling at the repository root - where a leaked
+ * panel source file would land. Ambient filenames both levels legitimately
+ * own a copy of are exempt.
  */
 export function findLayoutViolations(
   panelFiles: string[],
@@ -41,12 +41,6 @@ export function findLayoutViolations(
 
     const relative = file.slice("panel/".length);
     if (AMBIENT_BASENAMES[path.basename(relative)]) continue;
-
-    const underDashboard = path.join(repoRoot, "dashboard", relative);
-    if (exists(underDashboard)) {
-      violations.push({ file, conflictsWith: underDashboard });
-      continue;
-    }
 
     const atRepoRoot = path.join(repoRoot, relative);
     if (exists(atRepoRoot)) {
@@ -68,19 +62,19 @@ function trackedPanelFiles(): string[] {
 
 describe("panel implementation files resolve under panel/", () => {
   it("flags a file that resolves outside panel/", () => {
-    const violations = findLayoutViolations(["dashboard/leaked.tsx"], repoRoot, () => false);
+    const violations = findLayoutViolations(["tools/leaked.tsx"], repoRoot, () => false);
     expect(violations).toEqual([
-      { file: "dashboard/leaked.tsx", conflictsWith: "does not resolve under panel/" },
+      { file: "tools/leaked.tsx", conflictsWith: "does not resolve under panel/" },
     ]);
   });
 
-  it("flags a panel file with a same-path sibling under dashboard/ or the repository root", () => {
-    const exists = (p: string) => p.endsWith(path.join("dashboard", "src", "app", "page.tsx"));
+  it("flags a panel file with a same-path sibling at the repository root", () => {
+    const exists = (p: string) => p === path.join(repoRoot, "src", "app", "page.tsx");
     const violations = findLayoutViolations(["panel/src/app/page.tsx"], repoRoot, exists);
     expect(violations).toEqual([
       {
         file: "panel/src/app/page.tsx",
-        conflictsWith: path.join(repoRoot, "dashboard", "src", "app", "page.tsx"),
+        conflictsWith: path.join(repoRoot, "src", "app", "page.tsx"),
       },
     ]);
   });

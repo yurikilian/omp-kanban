@@ -88,7 +88,7 @@ interface RawContentBlock {
 
 interface RawMessage {
   role?: string;
-  content?: RawContentBlock[];
+  content?: string | RawContentBlock[];
   model?: string;
   usage?: { input?: number; output?: number; cost?: { total?: number } };
   toolCallId?: string;
@@ -137,8 +137,12 @@ function parseLines(raw: string): RawEntry[] {
   return entries;
 }
 
-function extractText(content: RawContentBlock[] | undefined): string {
+function extractText(content: string | RawContentBlock[] | undefined): string {
   if (!content) return "";
+  // A plain-string `content` is how OMP records a user turn that carries no
+  // structured blocks; treating it as an array silently threw and failed the
+  // whole timeline rather than the one entry.
+  if (typeof content === "string") return content;
   return content
     .filter((block) => block.type === "text" && typeof block.text === "string")
     .map((block) => block.text)

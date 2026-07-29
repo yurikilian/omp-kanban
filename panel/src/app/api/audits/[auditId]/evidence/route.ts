@@ -39,7 +39,10 @@ export async function GET(request: Request, { params }: RouteContext) {
       return NextResponse.json({ status: "event-missing", evidenceId, eventRef: resolution.evidence.eventRef });
     }
 
-    const target = new URL(sessionAgentUrl(evidence.sessionId, evidence.agentId, evidence.eventRef), request.url);
+    const target = new URL(
+      sessionAgentUrl(resolution.evidence.sessionId, resolution.evidence.agentId, resolution.evidence.eventRef),
+      request.url,
+    );
     const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     if (host) {
       target.host = host;

@@ -5,6 +5,7 @@ import type { AuditPricing } from "./analyzer-command";
 import { fingerprintAuditTarget, type AuditTarget } from "./fingerprint";
 import {
   indexAuditBundlesOnStartup,
+  readAuditJobRecords,
   writeAuditJobRecords,
   type IndexedAuditJob,
 } from "./startup-index";
@@ -14,6 +15,7 @@ const auditJobByFingerprint = new Map<string, StoredAuditJob>();
 
 const unavailablePricing: AuditPricing = { available: false, pricing: null };
 let hasRecoveredAuditJobs = false;
+let hasIndexedAuditJobs = false;
 
 export type StoredAuditJob = IndexedAuditJob;
 
@@ -39,12 +41,16 @@ function persistAuditJobs(): void {
 function ensureRecoveredAuditJobs(): void {
   if (hasRecoveredAuditJobs) return;
 
+  rehydrateAuditJobs(readAuditJobRecords());
   hasRecoveredAuditJobs = true;
-  rehydrateAuditJobs(indexAuditBundlesOnStartup());
 }
 
 export function initializeAuditJobStore(): void {
-  ensureRecoveredAuditJobs();
+  if (hasIndexedAuditJobs) return;
+
+  rehydrateAuditJobs(indexAuditBundlesOnStartup());
+  hasRecoveredAuditJobs = true;
+  hasIndexedAuditJobs = true;
 }
 
 function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): void {

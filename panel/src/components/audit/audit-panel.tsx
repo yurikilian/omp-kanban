@@ -14,7 +14,7 @@ export function AuditPanel({ audit }: AuditPanelProps) {
       ) : audit.findings.length === 0 ? (
         <p className="text-sm text-muted-foreground">This completed audit found no findings.</p>
       ) : (
-        audit.findings.map((finding) => <FindingCard key={finding.id} finding={finding} />)
+        audit.findings.map((finding) => <FindingCard key={finding.id} auditId={audit.auditId} finding={finding} />)
       )}
     </section>
   );

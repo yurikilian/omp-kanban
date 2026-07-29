@@ -1,8 +1,11 @@
 import type { EstimatedSavings, Finding, ObservedImpact, SavingsRange } from "@/server/audits/bundle-schema";
+import { EvidenceLink } from "./evidence-link";
 import { ProvenanceLabel } from "./provenance-label";
 import { SeverityBadge } from "./severity-badge";
 
 export interface FindingCardProps {
+  /** Scopes each cited evidence record's link; omitted only in contexts with no audit to scope against. */
+  auditId?: string;
   finding: Finding;
 }
 
@@ -98,7 +101,7 @@ function SavingsRanges({ savings }: { savings: EstimatedSavings }) {
   );
 }
 
-export function FindingCard({ finding }: FindingCardProps) {
+export function FindingCard({ auditId, finding }: FindingCardProps) {
   const headingId = `finding-${finding.id}`;
 
   return (
@@ -128,6 +131,18 @@ export function FindingCard({ finding }: FindingCardProps) {
         </div>
         <SavingsRanges savings={finding.estimatedSavings} />
       </div>
+      {auditId && finding.evidenceIds.length > 0 ? (
+        <div>
+          <h4 className="text-sm font-medium">Evidence</h4>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1">
+            {finding.evidenceIds.map((evidenceId) => (
+              <li key={evidenceId}>
+                <EvidenceLink auditId={auditId} evidenceId={evidenceId} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </article>
   );
 }

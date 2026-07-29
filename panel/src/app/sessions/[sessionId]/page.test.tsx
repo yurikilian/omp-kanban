@@ -1,26 +1,32 @@
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditManifest, AuditReport } from "@/server/audits/bundle-schema";
-import type { BundleValidation } from "@/server/audits/validate";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditReport } from "@/server/audits/bundle-schema";
 import type { SessionDetail as SessionDetailData } from "@/server/sessions/detail";
 
 const getSessionDetail = vi.fn();
-const indexAuditBundles = vi.fn();
-const auditsForSession = vi.fn();
+const getAuditJobsForSession = vi.fn();
+const readCompletedAuditMetadata = vi.fn();
+const fetchMock = vi.fn();
 
 vi.mock("@/server/sessions/detail", () => ({
   getSessionDetail: (...args: unknown[]) => getSessionDetail(...args),
 }));
 
+vi.mock("@/server/audits/job-store", () => ({
+  getAuditJobsForSession: (...args: unknown[]) => getAuditJobsForSession(...args),
+}));
+
 vi.mock("@/server/audits/index-bundles", () => ({
-  indexAuditBundles: (...args: unknown[]) => indexAuditBundles(...args),
-  auditsForSession: (...args: unknown[]) => auditsForSession(...args),
+  readCompletedAuditMetadata: (...args: unknown[]) => readCompletedAuditMetadata(...args),
 }));
 
 import SessionDetailPage from "./page";
 
 const SESSION_ID = "2026-01-01T09-00-00-000Z_00000000-0000-7000-8000-00000000000a";
 const AUDIT_ID = "audit_00000000-0000-4000-8000-000000000001";
+
+const COMPLETED_AUDIT_CREATED_AT = "2026-01-01T09:11:00.000Z";
 
 const SESSION: SessionDetailData = {
   id: SESSION_ID,
@@ -65,52 +71,64 @@ const COMPLETED_AUDIT: AuditReport = {
   methodology: "Measured from the session transcript.",
 };
 
-const MANIFEST: AuditManifest = {
-  schemaVersion: 1,
-  auditId: AUDIT_ID,
-  status: "completed",
-  target: { sessionId: SESSION_ID, transcriptPath: `${SESSION_ID}.jsonl` },
-  fingerprint: "fingerprint-1",
-  analyzer: { name: "kb-forensics", version: "1.0.0" },
-  createdAt: "2026-01-01T09:11:00.000Z",
-  startedAt: "2026-01-01T09:11:05.000Z",
-  completedAt: "2026-01-01T09:12:00.000Z",
-  artifacts: { manifest: "manifest.json", audit: "audit.json", report: "report.md", evidence: "evidence.jsonl" },
-};
-
-const VALID_BUNDLE: BundleValidation = {
-  status: "valid",
-  manifest: MANIFEST,
-  audit: COMPLETED_AUDIT,
-  evidence: [],
-  reportMarkdown: "# Audit\n",
-};
 
 beforeEach(() => {
   getSessionDetail.mockReset();
-  indexAuditBundles.mockReset();
-  auditsForSession.mockReset();
+  getAuditJobsForSession.mockReset();
+  readCompletedAuditMetadata.mockReset();
+  fetchMock.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("SessionDetailPage", () => {
   it("supplies the session's completed audit to SessionDetail so a finding's evidence link is reachable (E4-S9-AC1, E4-S9-AC2)", async () => {
     getSessionDetail.mockResolvedValue(SESSION);
-    indexAuditBundles.mockReturnValue({ all: [], bySessionId: new Map() });
-    auditsForSession.mockReturnValue([
-      { auditId: AUDIT_ID, bundleDir: `/tmp/audits/${AUDIT_ID}`, validation: VALID_BUNDLE, sessionId: SESSION_ID },
+    getAuditJobsForSession.mockResolvedValue([
+      { id: AUDIT_ID, sessionId: SESSION_ID, status: "completed", createdAt: COMPLETED_AUDIT_CREATED_AT },
     ]);
+    readCompletedAuditMetadata.mockReturnValue(COMPLETED_AUDIT);
 
     render(await SessionDetailPage({ params: Promise.resolve({ sessionId: SESSION_ID }) }));
 
     const link = await screen.findByRole("link", { name: "Open evidence evidence-1" });
     expect(link).toHaveAttribute("href", `/api/audits/${AUDIT_ID}/evidence?evidenceId=evidence-1`);
-    expect(auditsForSession).toHaveBeenCalledWith(expect.anything(), SESSION_ID);
+    expect(getAuditJobsForSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(readCompletedAuditMetadata).toHaveBeenCalledWith(expect.any(String), { auditId: AUDIT_ID, sessionId: SESSION_ID });
   });
 
+
+  it("renders a completed finding without evidence activation and requests only its cited evidence when the rendered link is opened (E4-S9-AC4)", async () => {
+    const evidenceHref = `/api/audits/${AUDIT_ID}/evidence?evidenceId=evidence-1`;
+    getSessionDetail.mockResolvedValue(SESSION);
+    getAuditJobsForSession.mockResolvedValue([{ id: AUDIT_ID, sessionId: SESSION_ID, status: "completed", createdAt: COMPLETED_AUDIT_CREATED_AT }]);
+    readCompletedAuditMetadata.mockReturnValue(COMPLETED_AUDIT);
+    vi.stubGlobal(
+      "fetch",
+      fetchMock.mockResolvedValue({
+        ok: false,
+        redirected: false,
+        json: async () => ({ status: "event-missing", evidenceId: "evidence-1", eventRef: "main:missing" }),
+      }),
+    );
+
+    render(await SessionDetailPage({ params: Promise.resolve({ sessionId: SESSION_ID }) }));
+
+    const link = await screen.findByRole("link", { name: "Open evidence evidence-1" });
+    expect(getAuditJobsForSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(readCompletedAuditMetadata).toHaveBeenCalledWith(expect.any(String), { auditId: AUDIT_ID, sessionId: SESSION_ID });
+    expect(fetchMock.mock.calls.filter(([url]) => url === evidenceHref)).toEqual([]);
+
+    await userEvent.setup().click(link);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent('The event referenced by evidence "evidence-1" could not be located in the transcript.');
+    expect(fetchMock.mock.calls.filter(([url]) => url === evidenceHref)).toEqual([[evidenceHref]]);
+  });
   it("renders the no-audit-yet state when the session has no completed audit", async () => {
     getSessionDetail.mockResolvedValue(SESSION);
-    indexAuditBundles.mockReturnValue({ all: [], bySessionId: new Map() });
-    auditsForSession.mockReturnValue([]);
+    getAuditJobsForSession.mockResolvedValue([]);
 
     render(await SessionDetailPage({ params: Promise.resolve({ sessionId: SESSION_ID }) }));
 

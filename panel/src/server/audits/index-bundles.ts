@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { auditManifestSchema, auditReportSchema, type AuditReport } from "./bundle-schema";
 import { validateAuditBundle, type BundleValidation } from "./validate";
 
 export interface IndexedAuditBundle {
@@ -60,6 +61,48 @@ export function indexAuditBundles(rootDir: string): AuditBundleIndex {
   }
 
   return { all, bySessionId };
+}
+
+
+export interface CompletedAuditMetadataRequest {
+  auditId: string;
+  sessionId: string;
+}
+
+/**
+ * Reads the completed audit data a session page renders without inspecting
+ * report or evidence artifacts. Evidence records stay behind EvidenceLink's
+ * targeted resolver until a user activates one (E4-S9-AC4).
+ */
+export function readCompletedAuditMetadata(
+  rootDir: string,
+  { auditId, sessionId }: CompletedAuditMetadataRequest,
+): AuditReport | null {
+  const bundleDir = path.join(rootDir, auditId);
+
+  let manifestJson: unknown;
+  let auditJson: unknown;
+  try {
+    manifestJson = JSON.parse(fs.readFileSync(path.join(bundleDir, "manifest.json"), "utf8"));
+    auditJson = JSON.parse(fs.readFileSync(path.join(bundleDir, "audit.json"), "utf8"));
+  } catch {
+    return null;
+  }
+
+  const manifest = auditManifestSchema.safeParse(manifestJson);
+  const audit = auditReportSchema.safeParse(auditJson);
+  if (
+    !manifest.success ||
+    !audit.success ||
+    manifest.data.status !== "completed" ||
+    manifest.data.auditId !== auditId ||
+    manifest.data.target.sessionId !== sessionId ||
+    audit.data.auditId !== auditId
+  ) {
+    return null;
+  }
+
+  return audit.data;
 }
 
 /** The bundles indexed for one session - what a session detail view reads (E4-S5-AC1). */

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAuditJob, getLatestAuditJobForSession } from "@/server/audits/job-store";
+import { createAuditJob, getAuditJobsForSession } from "@/server/audits/job-store";
 import { getSessionDetail, isSafeSessionId } from "@/server/sessions/detail";
 import { resolveAuditPricing } from "@/server/audits/pricing";
 
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json(await getLatestAuditJobForSession(sessionId));
+    return NextResponse.json(await getAuditJobsForSession(sessionId));
   } catch {
     return NextResponse.json({ error: "Failed to load audit" }, { status: 500 });
   }

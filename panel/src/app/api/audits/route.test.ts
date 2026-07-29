@@ -6,6 +6,7 @@ import type * as SessionDetailModule from "@/server/sessions/detail";
 const getSessionDetail = vi.fn();
 const createAuditJob = vi.fn();
 const getLatestAuditJobForSession = vi.fn();
+const getAuditJobsForSession = vi.fn();
 
 vi.mock("@/server/sessions/detail", async (importOriginal) => {
   const actual = await importOriginal<typeof SessionDetailModule>();
@@ -18,6 +19,7 @@ vi.mock("@/server/sessions/detail", async (importOriginal) => {
 vi.mock("@/server/audits/job-store", () => ({
   createAuditJob: (...args: unknown[]) => createAuditJob(...args),
   getLatestAuditJobForSession: (...args: unknown[]) => getLatestAuditJobForSession(...args),
+  getAuditJobsForSession: (...args: unknown[]) => getAuditJobsForSession(...args),
 }));
 
 import { GET, POST } from "./route";
@@ -42,6 +44,7 @@ beforeEach(() => {
   getSessionDetail.mockReset();
   createAuditJob.mockReset();
   getLatestAuditJobForSession.mockReset();
+  getAuditJobsForSession.mockReset();
 });
 
 describe("POST /api/audits", () => {
@@ -119,13 +122,28 @@ describe("POST /api/audits", () => {
 });
 
 describe("GET /api/audits", () => {
-  it("returns the runtime-held queued audit for a session after a browser reload (E4-S1-AC3)", async () => {
-    getLatestAuditJobForSession.mockResolvedValue(AUDIT_JOB);
+  it("returns failed and cancelled durable history with their reasons after a browser reload (E4-S6-AC4)", async () => {
+    const failedAudit: AuditJob = {
+      ...AUDIT_JOB,
+      id: "audit_00000000-0000-4000-8000-000000000002",
+      status: "failed",
+      failureSummary: "the analyzer exited before writing a bundle",
+    };
+    const cancelledAudit: AuditJob & { reason: string } = {
+      ...AUDIT_JOB,
+      id: "audit_00000000-0000-4000-8000-000000000003",
+      status: "cancelled",
+      reason: "the user stopped the analyzer",
+    };
+    const history = [failedAudit, cancelledAudit];
+    getLatestAuditJobForSession.mockResolvedValue(cancelledAudit);
+    getAuditJobsForSession.mockResolvedValue(history);
 
     const response = await GET(new Request(`http://panel.test/api/audits?sessionId=${SESSION_ID}`));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(AUDIT_JOB);
-    expect(getLatestAuditJobForSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(await response.json()).toEqual(history);
+    expect(getAuditJobsForSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(getLatestAuditJobForSession).not.toHaveBeenCalled();
   });
 });

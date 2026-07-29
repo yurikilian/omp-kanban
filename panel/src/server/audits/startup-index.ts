@@ -82,6 +82,7 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     (value.findings !== undefined && !Array.isArray(value.findings)) ||
     (value.fingerprint !== undefined && typeof value.fingerprint !== "string") ||
     (value.failureSummary !== undefined && typeof value.failureSummary !== "string") ||
+    (value.reason !== undefined && typeof value.reason !== "string") ||
     (value.exitStatus !== undefined && !isNullableNumber(value.exitStatus)) ||
     (value.stderrSummary !== undefined && typeof value.stderrSummary !== "string") ||
     (value.pid !== undefined && typeof value.pid !== "number")
@@ -97,6 +98,7 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     ...(value.findings === undefined ? {} : { findings: value.findings }),
     ...(value.fingerprint === undefined ? {} : { fingerprint: value.fingerprint }),
     ...(value.failureSummary === undefined ? {} : { failureSummary: value.failureSummary }),
+    ...(value.reason === undefined ? {} : { reason: value.reason }),
     ...(value.exitStatus === undefined ? {} : { exitStatus: value.exitStatus }),
     ...(value.stderrSummary === undefined ? {} : { stderrSummary: value.stderrSummary }),
     ...(value.pid === undefined ? {} : { pid: value.pid }),
@@ -184,7 +186,7 @@ function terminalJobFromBundle(
     return null;
   }
 
-  return {
+  const bundleJob: IndexedAuditJob = {
     id: auditId,
     sessionId: manifest.target.sessionId,
     status: manifest.status,
@@ -199,6 +201,10 @@ function terminalJobFromBundle(
       ? { stderrSummary: existing.stderrSummary }
       : {}),
   };
+
+  return existing && existing.status !== "queued" && existing.status !== "running"
+    ? { ...bundleJob, ...existing }
+    : bundleJob;
 }
 
 export function auditsRoot(): string {

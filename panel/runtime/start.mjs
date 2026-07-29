@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import next from "next";
 const require = createRequire(import.meta.url);
-const { indexAuditBundlesOnStartup } = require("../src/server/audits/startup-index.ts");
+const { initializeAuditJobStore } = require("../src/server/audits/job-store.ts");
 
 // Hard-coded, not configurable: the panel must never bind beyond loopback.
 const HOST = "127.0.0.1";
@@ -86,7 +86,7 @@ function requestListener(req, res) {
 }
 
 export async function start() {
-  indexAuditBundlesOnStartup();
+  initializeAuditJobStore();
   await app.prepare();
 
   const server = createServer(requestListener);

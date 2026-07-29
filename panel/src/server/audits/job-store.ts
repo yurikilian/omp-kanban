@@ -9,7 +9,6 @@ import {
   type IndexedAuditJob,
 } from "./startup-index";
 
-const latestAuditJobBySessionId = new Map<string, StoredAuditJob>();
 const auditJobById = new Map<string, StoredAuditJob>();
 const auditJobByFingerprint = new Map<string, StoredAuditJob>();
 
@@ -23,17 +22,13 @@ export interface CreateAuditJobOptions {
   pricing?: AuditPricing;
 }
 
-function isNewerAuditJob(candidate: StoredAuditJob, current: StoredAuditJob): boolean {
-  const createdAtComparison = candidate.createdAt.localeCompare(current.createdAt);
-  return createdAtComparison > 0 || (createdAtComparison === 0 && candidate.id.localeCompare(current.id) >= 0);
+function compareAuditJobs(left: StoredAuditJob, right: StoredAuditJob): number {
+  const createdAtComparison = left.createdAt.localeCompare(right.createdAt);
+  return createdAtComparison || left.id.localeCompare(right.id);
 }
 
 function storeAuditJob(job: StoredAuditJob): void {
   auditJobById.set(job.id, job);
-  const latestJob = latestAuditJobBySessionId.get(job.sessionId);
-  if (!latestJob || isNewerAuditJob(job, latestJob)) {
-    latestAuditJobBySessionId.set(job.sessionId, job);
-  }
   if (job.fingerprint) auditJobByFingerprint.set(job.fingerprint, job);
 }
 
@@ -48,6 +43,10 @@ function ensureRecoveredAuditJobs(): void {
   rehydrateAuditJobs(indexAuditBundlesOnStartup());
 }
 
+export function initializeAuditJobStore(): void {
+  ensureRecoveredAuditJobs();
+}
+
 function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): void {
   const currentJob = auditJobById.get(id);
   if (!currentJob) return;
@@ -57,6 +56,8 @@ function updateAuditJob(id: string, updates: Partial<StoredAuditJob>): void {
 }
 
 export function rehydrateAuditJobs(jobs: readonly StoredAuditJob[]): void {
+  auditJobById.clear();
+  auditJobByFingerprint.clear();
   for (const job of jobs) {
     storeAuditJob(job);
   }
@@ -114,9 +115,14 @@ export async function createAuditJob(
   return job;
 }
 
-export async function getLatestAuditJobForSession(sessionId: string): Promise<StoredAuditJob | null> {
+export async function getAuditJobsForSession(sessionId: string): Promise<StoredAuditJob[]> {
   ensureRecoveredAuditJobs();
-  return latestAuditJobBySessionId.get(sessionId) ?? null;
+  return [...auditJobById.values()].filter((job) => job.sessionId === sessionId).sort(compareAuditJobs);
+}
+
+export async function getLatestAuditJobForSession(sessionId: string): Promise<StoredAuditJob | null> {
+  const jobs = await getAuditJobsForSession(sessionId);
+  return jobs[jobs.length - 1] ?? null;
 }
 
 export async function getAuditJobById(auditJobId: string): Promise<StoredAuditJob | null> {

@@ -15,6 +15,7 @@ export interface AuditJob {
   findings?: unknown[];
   fingerprint?: string;
   failureSummary?: string;
+  reason?: string;
   exitStatus?: number | null;
   stderrSummary?: string;
 }

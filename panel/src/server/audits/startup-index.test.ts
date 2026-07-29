@@ -14,6 +14,7 @@ vi.mock("./dispatch", () => ({ dispatchQueuedAudit, getAuditBundleDirectory }));
 
 import { createAuditJob, getLatestAuditJobForSession } from "./job-store";
 import { indexAuditBundlesOnStartup, readAuditJobRecords, writeAuditJobRecords } from "./startup-index";
+import type { AuditJob } from "./types";
 
 const SESSION_ID = "2026-07-28T16-10-00-000Z_00000000-0000-7000-8000-000000000053";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,8 @@ afterEach(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
 });
+
+type DurableAuditJob = AuditJob & { reason?: string };
 
 describe("startup audit recovery", () => {
   it("keeps a dispatched audit running for its session after a browser reload (E4-S7-AC1)", async () => {
@@ -65,6 +68,79 @@ describe("startup audit recovery", () => {
     ]);
     expect(readAuditJobRecords(temporaryRoot)).toEqual(jobs);
     expect(dispatchQueuedAudit).not.toHaveBeenCalled();
+  });
+
+  it("preserves every persisted lifecycle record and terminal reason during recovery (E4-S6-AC4)", () => {
+    temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-audit-history-recovery-"));
+    fs.cpSync(path.join(fixturesDir, "bundle-valid"), path.join(temporaryRoot, "bundle-valid"), {
+      recursive: true,
+    });
+    const records: DurableAuditJob[] = [
+      {
+        id: "audit_queued",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "queued",
+        createdAt: "2026-07-22T10:16:00Z",
+      },
+      {
+        id: "bundle-valid",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "failed",
+        createdAt: "2026-07-22T10:17:00Z",
+        failureSummary: "the analyzer result was rejected before it could be published",
+      },
+      {
+        id: "audit_completed",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "completed",
+        createdAt: "2026-07-22T10:18:00Z",
+      },
+      {
+        id: "audit_insufficient_signal",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "insufficient_signal",
+        createdAt: "2026-07-22T10:19:00Z",
+      },
+      {
+        id: "audit_cancelled",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "cancelled",
+        createdAt: "2026-07-22T10:20:00Z",
+        reason: "the user stopped the analyzer",
+      },
+      {
+        id: "audit_interrupted",
+        sessionId: "2026-07-22T10-15-00-aaaa1111",
+        status: "interrupted",
+        createdAt: "2026-07-22T10:21:00Z",
+        reason: "the panel runtime ended before the analyzer finished",
+      },
+    ];
+    writeAuditJobRecords(records, temporaryRoot);
+
+    const recovered = indexAuditBundlesOnStartup(temporaryRoot);
+
+    expect(recovered).toHaveLength(records.length);
+    expect(recovered).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "bundle-valid",
+          status: "failed",
+          failureSummary: "the analyzer result was rejected before it could be published",
+        }),
+        expect.objectContaining({
+          id: "audit_cancelled",
+          status: "cancelled",
+          reason: "the user stopped the analyzer",
+        }),
+        expect.objectContaining({
+          id: "audit_interrupted",
+          status: "interrupted",
+          reason: "the panel runtime ended before the analyzer finished",
+        }),
+      ]),
+    );
+    expect(readAuditJobRecords(temporaryRoot)).toEqual(recovered);
   });
 
   it("does not recover malformed bundles as terminal audits (E4-S7-AC2)", () => {

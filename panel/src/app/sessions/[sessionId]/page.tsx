@@ -3,7 +3,8 @@ import path from "node:path";
 import { notFound } from "next/navigation";
 import { SessionDetail } from "@/components/session/session-detail";
 import type { AuditReport } from "@/server/audits/bundle-schema";
-import { auditsForSession, indexAuditBundles } from "@/server/audits/index-bundles";
+import { readCompletedAuditMetadata } from "@/server/audits/index-bundles";
+import { getAuditJobsForSession } from "@/server/audits/job-store";
 import { getSessionDetail } from "@/server/sessions/detail";
 
 // Read live session files at request time rather than freezing a detail at
@@ -17,24 +18,26 @@ interface SessionDetailPageProps {
 }
 
 /**
- * The most recently completed, validated audit for one session - what
- * SessionDetail's AuditPanel renders on first load, so a finding's
- * evidence links are already reachable without waiting on a live-stream
- * refresh (E4-S9-AC1, E4-S9-AC2).
+ * The most recent completed audit in canonical job history whose manifest
+ * and audit metadata still agree with that history. This deliberately does
+ * not validate evidence: EvidenceLink's targeted resolver owns that I/O
+ * after the user activates a citation (E4-S9-AC4).
  */
-function completedAuditForSession(sessionId: string, auditsRoot: string = DEFAULT_AUDITS_ROOT): AuditReport | null {
-  const index = indexAuditBundles(auditsRoot);
+async function completedAuditForSession(
+  sessionId: string,
+  auditsRoot: string = DEFAULT_AUDITS_ROOT,
+): Promise<AuditReport | null> {
+  const jobs = await getAuditJobsForSession(sessionId);
 
-  let latest: AuditReport | null = null;
-  let latestCompletedAt = "";
-  for (const bundle of auditsForSession(index, sessionId)) {
-    if (bundle.validation.status !== "valid" || bundle.validation.manifest.status !== "completed") continue;
-    if (bundle.validation.manifest.completedAt > latestCompletedAt) {
-      latest = bundle.validation.audit;
-      latestCompletedAt = bundle.validation.manifest.completedAt;
-    }
+  for (let index = jobs.length - 1; index >= 0; index -= 1) {
+    const job = jobs[index];
+    if (job.status !== "completed") continue;
+
+    const audit = readCompletedAuditMetadata(auditsRoot, { auditId: job.id, sessionId });
+    if (audit) return audit;
   }
-  return latest;
+
+  return null;
 }
 
 export default async function SessionDetailPage({ params }: SessionDetailPageProps) {
@@ -43,7 +46,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const audit = completedAuditForSession(sessionId);
+  const audit = await completedAuditForSession(sessionId);
 
   return (
     <main className="p-6">

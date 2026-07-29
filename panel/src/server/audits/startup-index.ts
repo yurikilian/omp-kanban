@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { reconcileOrphanedRunningJobs, recordSkippedBundleDirectory } from "./reconcile";
 
 export const AUDIT_JOB_RECORDS_FILENAME = ".omp-panel-audit-jobs.json";
 
@@ -17,6 +18,7 @@ const JOB_STATUSES: Record<string, true> = {
   insufficient_signal: true,
   failed: true,
   cancelled: true,
+  interrupted: true,
 };
 
 const BUNDLE_FILENAMES = ["manifest.json", "audit.json", "report.md", "evidence.jsonl"] as const;
@@ -32,6 +34,7 @@ export interface IndexedAuditJob {
   findings?: unknown[];
   fingerprint?: string;
   failureSummary?: string;
+  pid?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,7 +88,8 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     !value.createdAt ||
     (value.findings !== undefined && !Array.isArray(value.findings)) ||
     (value.fingerprint !== undefined && typeof value.fingerprint !== "string") ||
-    (value.failureSummary !== undefined && typeof value.failureSummary !== "string")
+    (value.failureSummary !== undefined && typeof value.failureSummary !== "string") ||
+    (value.pid !== undefined && typeof value.pid !== "number")
   ) {
     return null;
   }
@@ -98,6 +102,7 @@ function normalizeAuditJob(value: unknown): IndexedAuditJob | null {
     ...(value.findings === undefined ? {} : { findings: value.findings }),
     ...(value.fingerprint === undefined ? {} : { fingerprint: value.fingerprint }),
     ...(value.failureSummary === undefined ? {} : { failureSummary: value.failureSummary }),
+    ...(value.pid === undefined ? {} : { pid: value.pid }),
   };
 }
 
@@ -233,10 +238,15 @@ export function indexAuditBundlesOnStartup(auditsRootPath: string = auditsRoot()
     if (!entry.isDirectory()) continue;
 
     const job = terminalJobFromBundle(auditsRootPath, entry.name);
-    if (job) jobsById.set(job.id, job);
+    if (job) {
+      jobsById.set(job.id, job);
+      continue;
+    }
+
+    if (!jobsById.has(entry.name)) recordSkippedBundleDirectory(auditsRootPath, entry.name);
   }
 
-  const jobs = [...jobsById.values()].sort((left, right) => {
+  const jobs = reconcileOrphanedRunningJobs([...jobsById.values()]).sort((left, right) => {
     const byCreation = left.createdAt.localeCompare(right.createdAt);
     return byCreation || left.id.localeCompare(right.id);
   });

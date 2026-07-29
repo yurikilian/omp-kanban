@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { DelegationEvent } from "@/components/events/delegation-event";
 import { ErrorEvent } from "@/components/events/error-event";
 import { PromptEvent } from "@/components/events/prompt-event";
 import { ResponseEvent } from "@/components/events/response-event";
 import { StatusEvent } from "@/components/events/status-event";
 import { ToolCallEvent } from "@/components/events/tool-call-event";
+import { useWindowedEvents } from "@/hooks/use-windowed-events";
+import { useTimelineKeyboard } from "@/hooks/use-timeline-keyboard";
+import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionEventUrl } from "@/lib/session-url";
+import { MissingEventNotice } from "./missing-event-notice";
+import { ReturnToLive } from "./return-to-live";
+import { useFollowLive } from "@/hooks/use-follow-live";
 import type { TimelineEvent } from "@/server/sessions/timeline";
 
 export interface EventStreamProps {
@@ -15,6 +21,8 @@ export interface EventStreamProps {
 }
 
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; events: TimelineEvent[] };
+
+const TIMELINE_REFRESH_INTERVAL_MS = 2_000;
 
 /**
  * Dispatches one merged-transcript event to its own visual treatment
@@ -71,6 +79,44 @@ function renderEvent(event: TimelineEvent): ReactNode {
   }
 }
 
+function eventInspectorText(event: TimelineEvent): string {
+  switch (event.type) {
+    case "prompt":
+    case "response":
+    case "error":
+      return event.text;
+    case "tool_call":
+      return event.summary ?? event.toolName;
+    case "delegation":
+      return event.task ?? `${event.parentAgent} delegated to ${event.childAgent}`;
+    case "status":
+      return event.label;
+  }
+}
+
+function eventsForAgentBranch(events: TimelineEvent[], agentId: string | undefined): TimelineEvent[] {
+  if (!agentId) return events;
+
+  const branch = new Set([agentId]);
+  for (const event of events) {
+    if (event.type === "delegation" && branch.has(event.parentAgent)) branch.add(event.childAgent);
+  }
+
+  return events.filter((event) => {
+    switch (event.type) {
+      case "response":
+      case "tool_call":
+      case "error":
+        return branch.has(event.agent);
+      case "delegation":
+        return branch.has(event.parentAgent) || branch.has(event.childAgent);
+      case "prompt":
+      case "status":
+        return false;
+    }
+  });
+}
+
 /**
  * Loads and renders one session's merged main and sub-agent timeline.
  * Fetches its own data (rather than receiving it as a prop) because the
@@ -80,28 +126,157 @@ function renderEvent(event: TimelineEvent): ReactNode {
  * the whole page to eagerly rendering everything up front.
  */
 export function EventStream({ sessionId }: EventStreamProps) {
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return eventIdFromSearchParam(new URLSearchParams(window.location.search).get("event"));
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent"));
+  });
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
 
-    fetch(`/api/sessions/${sessionId}/timeline`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Failed to load timeline: ${response.status}`);
-        return response.json() as Promise<TimelineEvent[]>;
-      })
-      .then((events) => {
-        if (!cancelled) setState({ status: "ready", events });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: "error" });
-      });
+    const loadTimeline = (initialLoad: boolean) => {
+      fetch(`/api/sessions/${sessionId}/timeline`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Failed to load timeline: ${response.status}`);
+          return response.json() as Promise<TimelineEvent[]>;
+        })
+        .then((events) => {
+          if (!cancelled) setState({ status: "ready", events });
+        })
+        .catch(() => {
+          if (!cancelled && initialLoad) setState({ status: "error" });
+        });
+    };
+
+    setState({ status: "loading" });
+    loadTimeline(true);
+    const refreshTimer = window.setInterval(() => loadTimeline(false), TIMELINE_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    const updateSelection = () => {
+      setSelectedAgentId(agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent")));
+    };
+
+    window.addEventListener("popstate", updateSelection);
+    window.addEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    return () => {
+      window.removeEventListener("popstate", updateSelection);
+      window.removeEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    };
+  }, []);
+
+  // Windowing needs an events array on every render regardless of load
+  // state, so hooks stay unconditional; an empty array windows to nothing.
+  const events = state.status === "ready" ? state.events : [];
+  const visibleEvents = useMemo(() => eventsForAgentBranch(events, selectedAgentId), [events, selectedAgentId]);
+  const { containerRef, items, totalSize, measureElement } = useWindowedEvents(visibleEvents);
+  const liveAnchorRef = useRef<HTMLDivElement>(null);
+  const { isFollowing, returnToLive } = useFollowLive({
+    eventCount: visibleEvents.length,
+    timelineRef: containerRef,
+    liveAnchorRef,
+  });
+  const selectedEvent = useMemo(
+    () => visibleEvents.find((event) => event.id === selectedEventId),
+    [selectedEventId, visibleEvents],
+  );
+
+  const selectEvent = useCallback(
+    (eventId: string) => {
+      setSelectedEventId(eventId);
+      window.history.replaceState(window.history.state, "", sessionEventUrl(sessionId, eventId, selectedAgentId));
+    },
+    [sessionId, selectedAgentId],
+  );
+
+  const clearSelectedEvent = useCallback(() => {
+    setSelectedEventId(undefined);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("event");
+    const query = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
+
+  const toggleExpanded = useCallback((eventId: string) => {
+    setExpandedEventIds((current) => {
+      const next = new Set(current);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Only the ids in view can ever be a valid keyboard cursor position - the
+  // hook itself drops the cursor if the agent-branch filter narrows past it.
+  const eventIds = useMemo(() => visibleEvents.map((event) => event.id), [visibleEvents]);
+  const { focusedEventId, containerKeyDownProps } = useTimelineKeyboard({
+    eventIds,
+    onExpand: toggleExpanded,
+    onOpenInspector: selectEvent,
+    onClear: clearSelectedEvent,
+  });
+
+  useEffect(() => {
+    if (state.status !== "ready" || !selectedEvent) return;
+
+    const eventElementId = `session-event-${selectedEvent.id}`;
+    const selectedElement = document.getElementById(eventElementId);
+    if (selectedElement) {
+      selectedElement.scrollIntoView({ block: "center" });
+      return;
+    }
+
+    const eventIndex = visibleEvents.indexOf(selectedEvent);
+    const containerTop = containerRef.current?.getBoundingClientRect().top;
+    if (eventIndex < 0 || containerTop === undefined) return;
+
+    // This is the same initial row-height estimate used by the windowed
+    // timeline; the animation-frame retry runs after virtualization mounts it.
+    window.scrollTo({ top: Math.max(0, containerTop + window.scrollY + eventIndex * 88 - window.innerHeight / 2) });
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(eventElementId)?.scrollIntoView({ block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [containerRef, selectedEvent, state.status, visibleEvents]);
+
+  // The keyboard cursor can land on an event outside the virtualized
+  // window, same as a deep-linked selection above - bring it on-screen
+  // without stealing focus from the container the cursor actually lives on.
+  useEffect(() => {
+    if (focusedEventId === undefined) return;
+
+    const eventElementId = `session-event-${focusedEventId}`;
+    const focusedElement = document.getElementById(eventElementId);
+    if (focusedElement) {
+      focusedElement.scrollIntoView({ block: "nearest" });
+      return;
+    }
+
+    const eventIndex = eventIds.indexOf(focusedEventId);
+    const containerTop = containerRef.current?.getBoundingClientRect().top;
+    if (eventIndex < 0 || containerTop === undefined) return;
+
+    window.scrollTo({ top: Math.max(0, containerTop + window.scrollY + eventIndex * 88 - window.innerHeight / 2) });
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(eventElementId)?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [containerRef, eventIds, focusedEventId]);
 
   if (state.status === "loading") {
     return <p className="text-sm text-muted-foreground">Loading timeline…</p>;
@@ -109,13 +284,72 @@ export function EventStream({ sessionId }: EventStreamProps) {
   if (state.status === "error") {
     return <p className="text-sm text-muted-foreground">Failed to load the session timeline.</p>;
   }
-  if (state.events.length === 0) {
-    return <p className="text-sm text-muted-foreground">No events recorded for this session.</p>;
+  if (visibleEvents.length === 0) {
+    return (
+      <>
+        {selectedEventId && <MissingEventNotice eventId={selectedEventId} />}
+        <p className="text-sm text-muted-foreground">No events recorded for this session.</p>
+      </>
+    );
   }
 
   return (
-    <div data-slot="event-stream" className="flex flex-col gap-1">
-      {state.events.map(renderEvent)}
-    </div>
+    <>
+      {selectedEventId && !selectedEvent && <MissingEventNotice eventId={selectedEventId} />}
+      {selectedEvent && (
+        <aside data-slot="event-inspector" aria-label="Selected event" className="rounded-md border p-3 text-sm">
+          <h2 className="font-medium">Event inspector</h2>
+          <p>Event: {selectedEvent.id}</p>
+          <p>Type: {selectedEvent.type}</p>
+          <p>{eventInspectorText(selectedEvent)}</p>
+        </aside>
+      )}
+      <ReturnToLive isVisible={!isFollowing} onReturn={returnToLive} />
+      <div
+        data-slot="event-stream"
+        ref={containerRef}
+        tabIndex={0}
+        aria-label="Session event timeline"
+        style={{ position: "relative", height: totalSize }}
+        {...containerKeyDownProps}
+      >
+        {items.map(({ event, virtualItem }) => (
+          <div
+            key={event.id}
+            id={`session-event-${event.id}`}
+            data-event-id={event.id}
+            data-index={virtualItem.index}
+            ref={measureElement}
+            className="cursor-pointer pb-1"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${virtualItem.start}px)`,
+              ...(focusedEventId === event.id ? { outline: "2px solid #3b82f6", outlineOffset: "-2px" } : {}),
+            }}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selectedEventId === event.id}
+            aria-expanded={expandedEventIds.has(event.id)}
+            onClick={() => selectEvent(event.id)}
+            onKeyDown={(keyboardEvent) => {
+              if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                keyboardEvent.preventDefault();
+                selectEvent(event.id);
+              }
+            }}
+          >
+            {renderEvent(event)}
+          </div>
+        ))}
+        <div
+          ref={liveAnchorRef}
+          aria-hidden="true"
+          style={{ position: "absolute", top: totalSize, width: 1, height: 1 }}
+        />
+      </div>
+    </>
   );
 }

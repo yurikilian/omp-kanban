@@ -94,7 +94,7 @@ export function SessionDetail({ session, audit }: SessionDetailProps) {
       />
       <AuditPanel audit={liveAudit} />
       <EventStream sessionId={liveSession.id} />
-      <AgentTree sessionId={session.id} />
+      <AgentTree sessionId={liveSession.id} />
     </section>
   );
 }

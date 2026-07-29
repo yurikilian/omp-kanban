@@ -1,47 +1,67 @@
 import { watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { AuditLifecycleStatus } from "@/lib/audit-states";
+import {
+  AUDIT_JOB_RECORDS_FILENAME,
+  readAuditJobRecords,
+  type IndexedAuditJob,
+} from "./startup-index";
 
 const DEFAULT_AUDITS_ROOT = path.join(os.homedir(), ".omp", "forensics", "audits");
 
 export interface AuditChange {
   sessionId: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: AuditLifecycleStatus;
 }
 
 export interface AuditWatcher {
   close(): void;
 }
 
-/**
- * Extracts session ID from an audit file path.
- * Audit files are stored at: ~/.omp/forensics/audits/{sessionId}/*.json
- */
-function sessionIdFromAuditPath(filename: string): string | null {
-  const segments = filename.replace(/\\/g, "/").split("/").filter(Boolean);
-  if (segments.length >= 2) {
-    return segments[segments.length - 2];
-  }
-  return null;
+function isAuditLifecycleStatus(status: string): status is AuditLifecycleStatus {
+  return (
+    status === "queued" ||
+    status === "running" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "insufficient_signal"
+  );
 }
 
-/**
- * Monitors the audits directory for file changes and emits audit change events
- * as audits transition between states (queued, running, completed, failed).
- */
+function hasRelevantRecordChange(previous: IndexedAuditJob | undefined, next: IndexedAuditJob): boolean {
+  return (
+    !previous ||
+    previous.status !== next.status ||
+    previous.reason !== next.reason ||
+    previous.failureSummary !== next.failureSummary ||
+    previous.stderrSummary !== next.stderrSummary
+  );
+}
+
+
 export function watchAudits(
   onAuditChange: (change: AuditChange) => void,
   root: string = DEFAULT_AUDITS_ROOT,
 ): AuditWatcher {
+  let previousJobs = new Map(readAuditJobRecords(root).map((job) => [job.id, job]));
+
   const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
-    if (typeof filename !== "string") return;
+    if (
+      typeof filename !== "string" ||
+      path.basename(filename.replace(/\\/g, "/")) !== AUDIT_JOB_RECORDS_FILENAME
+    ) {
+      return;
+    }
 
-    const sessionId = sessionIdFromAuditPath(filename);
-    if (!sessionId) return;
-
-    // Infer status from file presence and name patterns
-    // For now, emit as "running" for any update (status detection can be enhanced later)
-    onAuditChange({ sessionId, status: "running" });
+    const jobs = readAuditJobRecords(root);
+    for (const job of jobs) {
+      if (isAuditLifecycleStatus(job.status) && hasRelevantRecordChange(previousJobs.get(job.id), job)) {
+        onAuditChange({ sessionId: job.sessionId, status: job.status });
+      }
+    }
+    previousJobs = new Map(jobs.map((job) => [job.id, job]));
   });
 
   return { close: () => watcher.close() };

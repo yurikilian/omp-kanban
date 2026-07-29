@@ -100,7 +100,7 @@ describe("watchAudits", () => {
     expect(changes).toEqual([{ sessionId: "session-first-audit", status: "queued" }]);
   });
 
-  it("delivers a lifecycle change written right after creation when the filesystem event never fires (E4-S6-AC5)", async () => {
+  it("delivers a lifecycle change written right after the watcher is created even when the filesystem event never fires (E4-S6-AC5)", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-audit-watcher-reconcile-"));
     writeAuditJobRecords([], root);
     const changes: AuditChange[] = [];
@@ -126,7 +126,7 @@ describe("watchAudits", () => {
     expect(filesystemWatch.close).not.toHaveBeenCalled();
   });
 
-  it("emits one change per record transition when a late filesystem event repeats a reconciled write (E4-S6-AC2, E4-S6-AC3, E4-S6-AC4)", async () => {
+  it("emits one change per record transition when both the filesystem event and the reconcile pass see the same write (E4-S6-AC2, E4-S6-AC3, E4-S6-AC4)", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-audit-watcher-late-event-"));
     writeAuditJobRecords([], root);
     const changes: AuditChange[] = [];
@@ -150,7 +150,7 @@ describe("watchAudits", () => {
     expect(changes).toEqual(expected);
   });
 
-  it("close stops both the filesystem watch and the reconcile pass (E4-S6-AC5)", async () => {
+  it("close() stops both the filesystem watch and the reconcile pass (E4-S6-AC5)", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-audit-watcher-close-"));
     writeAuditJobRecords([], root);
     const changes: AuditChange[] = [];

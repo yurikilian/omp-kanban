@@ -13,10 +13,11 @@ Everything below is here because getting it wrong is expensive and silent.
 
 **The core is prose, not application code.** It ships ten omp subagent definitions
 and two skills. Every `.md` file under `agents/` becomes a system prompt verbatim.
-Rewording for style can change behavior. The one exception is `dashboard/` — a
-vendored web app (Express + React) launched by the `hooks/pre/kb-dashboard.ts`
-session-start hook; it is optional, opt-in at install (`--with-dashboard`), and
-does not affect the agents or skill.
+Rewording for style can change behavior. The one exception is `panel/` — a
+vendored Next.js app launched by the `hooks/pre/kb-panel.ts` session-start hook.
+The hook installs always; the app itself is opt-in — `--with-panel` runs
+`npm install` and `next build` against it — and does not affect the agents or
+skill.
 
 **Agent names are load-bearing.** Never name an agent `designer`, `librarian`,
 `reviewer`, `scout`, `sonic`, `task`, `explore`, `plan`, `oracle`, or

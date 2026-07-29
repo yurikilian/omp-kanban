@@ -65,10 +65,10 @@ configuration, and which are only instructions to the agents.
 ```
 
 This removes the agents, skill, the guardrails hook and its config overlay, and
-— if you installed it — the dashboard hook and vendored app. It is a thin wrapper
-over `install.sh --uninstall` (same effect; one place for the removal logic). The dashboard's runtime state
-(`~/.omp/agent/dashboard/`, including `dashboard.db`) is left in place — delete it
-by hand if you want it gone.
+the panel launcher hook. If you installed the vendored app with `--with-panel`,
+that goes too. It is a thin wrapper over `install.sh --uninstall` (same effect;
+one place for the removal logic). The panel's runtime state
+(`~/.omp/agent/panel/`) is left in place — delete it by hand if you want it gone.
 
 ## The board
 
@@ -119,34 +119,36 @@ concurrent invocations never collide. All board state for a run lives in one
 SQLite file there, `kanban.db`, queried through the bundled `kb_db.py` helper —
 never hand-edited. Add `.kanban/` to your `.gitignore`.
 
-## Dashboard (optional)
+## Panel (optional)
 
-A vendored web dashboard ships alongside the board. It reads
-`~/.omp/agent/sessions/` and shows session timelines, tool calls, KPI cards
-(tokens, cost, message counts), and markdown plans — read-only, no session
-creation. Install it with:
+A vendored Next.js app ships alongside the board. It reads
+`~/.omp/agent/sessions/` and each run's `kanban.db` directly — no separate
+server-side database — and shows session timelines, tool calls, KPI cards
+(tokens, cost, message counts), and markdown plans, read-only, no session
+creation. Its launcher hook installs always; build and install the app itself
+with:
 
 ```bash
-./install.sh --with-dashboard
+./install.sh --with-panel
 ```
 
-That copies the app in and builds it (`npm install` + `npm run build`; the server
-has a native `better-sqlite3` dependency, which is why it is opt-in rather than
-part of the light default install).
+That copies the app in and builds it (`npm install` + `next build`; heavier than
+the light default install, which is why it is opt-in).
 
-Once installed, a `session_start` hook launches it automatically — **once**. It is
-a cross-session singleton: the first omp session starts a single dashboard daemon
-on a random free port and prints the URL into the session; every later session
-reuses that same one instead of opening another. The daemon outlives the session
-that started it.
+Once installed, the `session_start` hook launches it automatically — **once**.
+It is a cross-session singleton: the first omp session starts a single panel
+daemon on a random free port and prints the URL into the session; every later
+session reuses that same one instead of opening another. The daemon outlives
+the session that started it.
 
-- The running instance is recorded in `~/.omp/agent/dashboard/state.json`.
+- The running instance is recorded in `~/.omp/agent/panel/state.json`.
 - Stop it by killing the `pid` in that file.
-- `OMP_KANBAN_DASHBOARD_OPEN=1` also opens a browser tab on fresh start.
-- `PORT` and `DASHBOARD_DB` override the port and SQLite location.
+- `OMP_PANEL_OPEN=1` also opens a browser tab on fresh start.
+- `OMP_PANEL_DISABLED=1` skips the launcher entirely for a session.
+- `OMP_PANEL_NODE` overrides the `node` binary used to run the daemon.
 
-Without `--with-dashboard`, nothing dashboard-related is installed and no hook
-runs — the agents and skill behave exactly as before.
+Without `--with-panel`, the app itself is never installed and the hook no-ops
+on every session start — the agents and skill behave exactly as before.
 
 ## How the review works
 

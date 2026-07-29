@@ -18,11 +18,12 @@ the usual kind. The "source code" is prose, read by a model rather than a
 compiler — which changes what "correct" means, as described under
 [Editing agent definitions](#editing-agent-definitions).
 
-**The one exception is `dashboard/`** — a vendored web app (Express server + React
-UI) that reads `~/.omp/agent/sessions/` and shows session timelines, KPIs, and
-plans. It is optional and opt-in: `./install.sh --with-dashboard` installs it and
-a `session_start` hook that launches it. Nothing about the agents or skill depends
-on it. See [Hooks and the dashboard](#hooks-and-the-dashboard).
+**The one exception is `panel/`** — a vendored Next.js app (see
+[Hooks and the panel](#hooks-and-the-panel)) that reads `~/.omp/agent/sessions/` and
+shows session timelines, KPIs, and plans. It is optional and opt-in:
+`./install.sh --with-panel` installs and builds it; the `session_start` hook
+that launches it is installed always but no-ops until the app is built.
+Nothing about the agents or skill depends on it.
 
 ## Layout
 
@@ -33,9 +34,9 @@ skills/kanban-cycle/kb_db.py  stdlib helper for the per-run SQLite state
 skills/cost-forensics/ SKILL.md — off-board spend audit + self-improvement pass
 guardrails/           RUNTIME-POLICY.md (one source for the shared agent rules)
                       + omp-config.recommended.yml (conservative omp settings)
-hooks/pre/            kb-guardrails.ts — the dispatch gate (installed always)
-                      kb-dashboard.ts — launches the dashboard (opt-in)
-dashboard/            vendored web app (Express + React); built at install time
+hooks/pre/            kb-guardrails.ts — the dispatch gate
+                      kb-panel.ts — launches the panel (both installed always)
+panel/                vendored Next.js app; installed + built only via --with-panel
 docs/                 CONFIGURATION.md, kanban-flow.dot + .png (README diagram)
 tests/                python unittest + node --test; ./tests/run.sh runs both
 install.sh            copies definitions into an omp discovery root
@@ -141,7 +142,7 @@ review. Everything mechanical is `@smol`. **Do not upgrade a role without a
 reason you can state**; this is the largest cost lever in the system, and the
 person running it is budget-constrained.
 
-## Hooks and the dashboard
+## Hooks and the panel
 
 Two hooks ship here, and they are unrelated to each other.
 
@@ -156,38 +157,54 @@ window. Every internal failure is caught and allows the call. `KB_GUARD_DISABLED
 turns it off without uninstalling. Details in
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-**`hooks/pre/kb-dashboard.ts` is a `session_start` hook** that launches the
-vendored `dashboard/` app. It is not part of the board — it is infrastructure that
-happens to ship alongside it, installed only with `./install.sh --with-dashboard`.
+### Panel (optional)
 
-**The hook is a cross-session singleton launcher.** Its whole job is to guarantee
-*one* dashboard across every omp session, never one-per-session:
+**`hooks/pre/kb-panel.ts` is a `session_start` hook** that launches the
+vendored `panel/` app — a Next.js UI that reads `~/.omp/agent/sessions/` and
+shows session timelines, KPIs, and plans. The hook itself is installed on
+every install, always; it is a no-op unless `panel/` was actually built, which
+only happens via `./install.sh --with-panel` (`npm install && next build` —
+heavier, so kept opt-in even though the launcher is not).
 
-- Shared state lives at `~/.omp/agent/dashboard/` — `state.json` (`{port, pid,
-  startedAt}`) names the running daemon; `.lock` (a directory, created with atomic
-  `mkdir`) guards two sessions racing to start it at the same instant.
-- On `session_start` it checks liveness (recorded pid alive **and** `/health`
-  answers). Live → reuse and print the URL. Not live → acquire the lock, pick a
-  **random free port** (bind `:0`, read the assigned port), spawn the server
-  **detached + `unref()`** so it outlives the session, publish `state.json`, print
-  the URL.
+**The hook is a cross-session singleton launcher.** Its whole job is to
+guarantee *one* panel across every omp session, never one-per-session:
+
+- Shared state lives at `~/.omp/agent/panel/` — `state.json` (`{port, pid,
+  startedAt}`) names the running daemon; `.lock` (a directory, created with
+  atomic `mkdir`, reclaimed after 30s as abandoned) guards two sessions racing
+  to start it at the same instant.
+- On `session_start` it checks liveness (recorded pid alive **and**
+  `GET /internal/health` answers `{"status":"ok"}`). Live → reuse and print the
+  URL. Not live → acquire the lock, re-check under it (a sibling may have just
+  published), pick a **random free port** (bind `:0`, read the assigned port),
+  spawn `panel/runtime/start.mjs` **detached + `unref()`** under a real `node`
+  (not `process.execPath` — inside omp's TS runtime that's the omp binary
+  itself; override with `OMP_PANEL_NODE` if `node` is not on PATH) so the
+  daemon outlives the session, publish `state.json`, then poll health before
+  printing the URL — this keeps the lock held until the daemon is provably up,
+  so a concurrent session sees either the lock or a healthy endpoint, never a
+  booting daemon it mistakes for dead and duplicates.
 - Everything is wrapped and time-boxed: a launcher failure must never block or
-  break session start. If the dashboard was not installed (`--with-dashboard`
-  skipped), the hook detects the missing build and silently no-ops.
+  break session start. If the panel was not installed (`--with-panel`
+  skipped, so `node_modules/`, `.next/`, or `runtime/start.mjs` is missing),
+  the hook detects it and silently no-ops. `OMP_PANEL_DISABLED=1` turns the
+  whole hook off. `OMP_PANEL_OPEN=1` additionally opens a browser tab once the
+  daemon answers healthy.
 
-**Consequences worth knowing.** The daemon is deliberately not tied to a session's
-lifetime — it keeps running after the session ends; stop it via the pid in
-`state.json`. Because it is a single shared process, it reflects one working
-directory (the session that launched it) as "current" in `/api/projects`; the UI
-lists every project regardless, so that is only a default, not a limitation.
-`OMP_KANBAN_DASHBOARD_OPEN=1` additionally opens a browser tab on fresh start.
+**Consequences worth knowing.** The daemon is deliberately not tied to a
+session's lifetime — it keeps running after the session ends; stop it via the
+pid in `state.json`. It is a single shared process regardless of which working
+directory launched it, so `~/.omp/agent/sessions/` (read directly, not scoped
+per project) is what it shows across every project.
 
-**`dashboard/` is vendored, built at install.** `node_modules/` and `web/dist/`
-are git-ignored and produced by `--with-dashboard` (`npm install` in `server/` and
-`web/`, then `npm run build`). The server has a native dependency
-(`better-sqlite3`), which is why the dashboard is opt-in rather than part of the
-light Markdown install. It persists to `~/.omp/agent/dashboard.db` and reads
-`~/.omp/agent/sessions/` — both outside this repo.
+**`panel/` is vendored source, not a pre-built artifact.** `--with-panel` runs
+`npm install` and `next build` against it at the target install root — heavier
+than the plain Markdown install, which is why it stays opt-in rather than
+running unconditionally (`node_modules/` and `.next/` are git-ignored via
+`panel/.gitignore`, produced only by that flag). Unlike the retired dashboard,
+there is no separate server process or database — the panel reads
+`~/.omp/agent/sessions/` (and `kanban.db` under each run's `.kanban/`)
+directly, both outside this repo.
 
 **Not yet exercised against a live omp.** Three things to confirm on a real
 install: the exact hook directory (`pre/` vs `post/` for `session_start`), that

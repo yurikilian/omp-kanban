@@ -3,9 +3,6 @@
 .omp/
 # Per-run cycle artifacts written by the kanban-cycle skill.
 .kanban/
-# Vendored dashboard build-time artifacts — produced by `./install.sh --with-dashboard`.
-dashboard/**/node_modules/
-dashboard/web/dist/
 # Test run artifacts.
 __pycache__/
 # Stray OS/editor files.

@@ -39,8 +39,13 @@ export async function GET(request: Request, { params }: RouteContext) {
       return NextResponse.json({ status: "event-missing", evidenceId, eventRef: resolution.evidence.eventRef });
     }
 
-    const { evidence } = resolution;
-    return NextResponse.redirect(new URL(sessionAgentUrl(evidence.sessionId, evidence.agentId, evidence.eventRef), request.url));
+    const target = new URL(sessionAgentUrl(evidence.sessionId, evidence.agentId, evidence.eventRef), request.url);
+    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    if (host) {
+      target.host = host;
+      target.protocol = request.headers.get("x-forwarded-proto") ?? target.protocol;
+    }
+    return NextResponse.redirect(target);
   } catch {
     return NextResponse.json({ error: "Failed to resolve evidence" }, { status: 500 });
   }

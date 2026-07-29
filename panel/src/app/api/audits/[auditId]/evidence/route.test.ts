@@ -19,10 +19,15 @@ async function copyAuditFixture() {
   });
 }
 
-function resolveEvidence(evidenceId: string) {
-  return GET(new Request(`http://panel.test/api/audits/${auditId}/evidence?evidenceId=${encodeURIComponent(evidenceId)}`), {
-    params: Promise.resolve({ auditId }),
-  });
+function resolveEvidence(evidenceId: string, headers?: HeadersInit) {
+  return GET(
+    new Request(`http://panel.test/api/audits/${auditId}/evidence?evidenceId=${encodeURIComponent(evidenceId)}`, {
+      headers,
+    }),
+    {
+      params: Promise.resolve({ auditId }),
+    },
+  );
 }
 
 beforeEach(async () => {
@@ -44,6 +49,16 @@ describe("GET /api/audits/[auditId]/evidence", () => {
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
       `http://panel.test/sessions/${sessionId}?event=msg_0007%23tool_call_2&agent=main`,
+    );
+  });
+
+  it("redirects to the origin requested by a client behind the custom runtime", async () => {
+    const response = await resolveEvidence("evidence-1", {
+      host: "127.0.0.1:4391",
+    });
+
+    expect(response.headers.get("location")).toBe(
+      `http://127.0.0.1:4391/sessions/${sessionId}?event=msg_0007%23tool_call_2&agent=main`,
     );
   });
 

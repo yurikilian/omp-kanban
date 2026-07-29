@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { dispatchQueuedAudit, getAuditBundleDirectory } from "./dispatch";
-import { reconcileAudit } from "./reconcile";
-import type { AuditPricing } from "./analyzer-command";
-import { fingerprintAuditTarget, type AuditTarget } from "./fingerprint";
+import { dispatchQueuedAudit, getAuditBundleDirectory } from "./dispatch.ts";
+import { reconcileAudit } from "./reconcile.ts";
+import type { AuditPricing } from "./analyzer-command.ts";
+import { fingerprintAuditTarget, type AuditTarget } from "./fingerprint.ts";
 import {
   indexAuditBundlesOnStartup,
   readAuditJobRecords,
   writeAuditJobRecords,
   type IndexedAuditJob,
-} from "./startup-index";
+} from "./startup-index.ts";
 
 const auditJobById = new Map<string, StoredAuditJob>();
 const auditJobByFingerprint = new Map<string, StoredAuditJob>();

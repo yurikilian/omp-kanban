@@ -1,9 +1,9 @@
 import { type ChildProcess } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { IndexedAuditJob } from "./startup-index";
-import type { AuditJob } from "./types";
-import { validateAuditBundle } from "./validate";
+import type { IndexedAuditJob } from "./startup-index.ts";
+import type { AuditJob } from "./types.ts";
+import { validateAuditBundle } from "./validate.ts";
 
 export const MAX_STDERR_SUMMARY_BYTES = 4_096;
 

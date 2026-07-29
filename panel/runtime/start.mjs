@@ -18,12 +18,10 @@
 process.env.NEXT_TELEMETRY_DISABLED = "1";
 
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import next from "next";
-const require = createRequire(import.meta.url);
-const { initializeAuditJobStore } = require("../src/server/audits/job-store.ts");
+import { initializeAuditJobStore } from "../src/server/audits/job-store.ts";
 
 // Hard-coded, not configurable: the panel must never bind beyond loopback.
 const HOST = "127.0.0.1";

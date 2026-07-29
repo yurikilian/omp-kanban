@@ -9,7 +9,7 @@ import {
   type AuditManifest,
   type AuditReport,
   type EvidenceRecord,
-} from "./bundle-schema";
+} from "./bundle-schema.ts";
 
 /**
  * The four files every finished audit bundle contains

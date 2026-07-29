@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { reconcileOrphanedRunningJobs, recordSkippedBundleDirectory } from "./reconcile";
-import type { AuditJob, AuditJobStatus } from "./types";
+import { reconcileOrphanedRunningJobs, recordSkippedBundleDirectory } from "./reconcile.ts";
+import type { AuditJob, AuditJobStatus } from "./types.ts";
 
 export const AUDIT_JOB_RECORDS_FILENAME = ".omp-panel-audit-jobs.json";
 

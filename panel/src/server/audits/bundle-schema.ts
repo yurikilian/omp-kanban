@@ -191,11 +191,11 @@ export type EvidenceRecord = z.infer<typeof evidenceRecordSchema>;
 
 /** Raised by `parseEvidenceJsonl` naming the 1-based line that failed, so a caller can point at the exact bad record. */
 export class EvidenceJsonlError extends Error {
-  constructor(
-    public readonly lineNumber: number,
-    detail: string,
-  ) {
+  readonly lineNumber: number;
+
+  constructor(lineNumber: number, detail: string) {
     super(`evidence.jsonl line ${lineNumber}: ${detail}`);
+    this.lineNumber = lineNumber;
     this.name = "EvidenceJsonlError";
   }
 }

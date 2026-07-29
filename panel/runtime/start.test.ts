@@ -1,18 +1,22 @@
 // @vitest-environment node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { start } from "./start.mjs";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const initializeAuditJobStore = vi.hoisted(() => vi.fn());
+vi.mock("../src/server/audits/job-store.ts", () => ({ initializeAuditJobStore }));
+
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const panelRoot = path.resolve(dirname, "..");
 const nextDir = path.join(panelRoot, ".next");
 
-let ctx: { server: net.Server; url: string; port: number };
+let ctx: { server: net.Server; url: string; port: number } | undefined;
+let startupError: unknown;
 
 beforeAll(async () => {
   // A clean checkout has no build cache - prove the build works from scratch.
@@ -22,8 +26,20 @@ beforeAll(async () => {
     stdio: "inherit",
     env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
   });
-  ctx = await start();
+  try {
+    // Dynamic import makes a native-loader failure an assertion rather than a test-module error.
+    const runtime = await import("./start.mjs");
+    ctx = await runtime.start();
+  } catch (error) {
+    startupError = error;
+  }
 }, 180_000);
+
+function runtimeContext(): { server: net.Server; url: string; port: number } {
+  expect(startupError).toBeUndefined();
+  expect(ctx).toBeDefined();
+  return ctx!;
+}
 
 afterAll(async () => {
   if (ctx?.server) {
@@ -66,26 +82,65 @@ describe("production start path", () => {
   });
 });
 
+describe("native audit startup", () => {
+  it("E1-S4-AC1: initializes the audit store through Vitest's module graph", () => {
+    runtimeContext();
+    expect(initializeAuditJobStore).toHaveBeenCalledOnce();
+  });
+
+  it("E1-S4-AC1: starts the production entry through Node 25's native loader", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "omp-panel-runtime-"));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          [
+            'import { start } from "./runtime/start.mjs";',
+            "const { server } = await start();",
+            "const { promise, resolve } = Promise.withResolvers();",
+            "server.close(resolve);",
+            "await promise;",
+          ].join("\n"),
+        ],
+        {
+          cwd: panelRoot,
+          encoding: "utf8",
+          env: { ...process.env, HOME: home, NEXT_TELEMETRY_DISABLED: "1" },
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("http://127.0.0.1:");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("serving", () => {
   it("answers 200 with the panel shell markup over loopback", async () => {
-    const res = await fetch(ctx.url + "/");
+    const { url } = runtimeContext();
+    const res = await fetch(url + "/");
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("OMP Panel");
   });
 
   it("answers the shell, an internal domain route and the event stream from the same process", async () => {
-    const shell = await fetch(ctx.url + "/");
+    const { url } = runtimeContext();
+    const shell = await fetch(url + "/");
     expect(shell.status).toBe(200);
 
-    const health = await fetch(ctx.url + "/internal/health");
+    const health = await fetch(url + "/internal/health");
     expect(health.status).toBe(200);
     expect(health.headers.get("content-type")).toContain("application/json");
     const body = await health.json();
     expect(body.status).toBe("ok");
 
     const controller = new AbortController();
-    const stream = await fetch(ctx.url + "/internal/events", { signal: controller.signal });
+    const stream = await fetch(url + "/internal/events", { signal: controller.signal });
     expect(stream.status).toBe(200);
     expect(stream.headers.get("content-type")).toContain("text/event-stream");
     controller.abort();
@@ -94,7 +149,8 @@ describe("serving", () => {
 
 describe("network boundary", () => {
   it("binds to 127.0.0.1 only", () => {
-    const address = ctx.server.address();
+    const { server } = runtimeContext();
+    const address = server.address();
     expect(address).not.toBeNull();
     expect(typeof address).not.toBe("string");
     expect((address as net.AddressInfo).address).toBe("127.0.0.1");
@@ -106,7 +162,8 @@ describe("network boundary", () => {
     expect(external, "this host has no non-loopback IPv4 interface to test against").toBeDefined();
 
     const { promise, resolve } = Promise.withResolvers<"connected" | "refused" | "silently-dropped">();
-    const socket = net.connect({ host: external!.address, port: ctx.port });
+    const { port } = runtimeContext();
+    const socket = net.connect({ host: external!.address, port });
     socket.once("connect", () => {
       socket.destroy();
       resolve("connected");
@@ -135,7 +192,8 @@ describe("network boundary", () => {
 
   it("carries no permissive CORS header on any panel response", async () => {
     for (const p of ["/", "/internal/health"]) {
-      const res = await fetch(ctx.url + p, { headers: { Origin: "http://evil.example" } });
+      const { url } = runtimeContext();
+      const res = await fetch(url + p, { headers: { Origin: "http://evil.example" } });
       expect(res.headers.get("access-control-allow-origin")).toBeNull();
     }
   });

@@ -6,7 +6,7 @@ import {
   buildAnalyzerCommand,
   type AnalyzerCommandInput,
   type AuditPricing,
-} from "./analyzer-command";
+} from "./analyzer-command.ts";
 
 export interface QueuedAuditDispatchInput {
   auditId: string;

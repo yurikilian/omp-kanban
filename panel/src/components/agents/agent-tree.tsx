@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { agentIdFromSearchParam, eventIdFromSearchParam, SESSION_URL_CHANGE_EVENT, sessionAgentUrl } from "@/lib/session-url";
 import type { AgentHierarchyNode } from "@/server/sessions/agents";
 import { AgentNode } from "./agent-node";
 
@@ -10,21 +11,34 @@ export interface AgentTreeProps {
 
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; nodes: AgentHierarchyNode[] };
 
-function renderBranch(node: AgentHierarchyNode, depth: number) {
+function renderBranch(
+  node: AgentHierarchyNode,
+  depth: number,
+  selectedAgentId: string | undefined,
+  onSelect: (agentId: string) => void,
+) {
   return (
     <div key={node.path.join("/")} data-slot="agent-branch">
-      <AgentNode
-        name={node.name}
-        path={node.path}
-        parentUnknown={node.parentUnknown}
-        depth={depth}
-        status={node.status}
-        durationMs={node.metrics.durationMs}
-        inputTokens={node.metrics.inputTokens}
-        outputTokens={node.metrics.outputTokens}
-        costUsd={node.metrics.costUsd}
-      />
-      {node.children.map((child) => renderBranch(child, depth + 1))}
+      <button
+        type="button"
+        aria-label={`Scope timeline to ${node.name}`}
+        aria-pressed={selectedAgentId === node.name}
+        className="block w-full text-left"
+        onClick={() => onSelect(node.name)}
+      >
+        <AgentNode
+          name={node.name}
+          path={node.path}
+          parentUnknown={node.parentUnknown}
+          depth={depth}
+          status={node.status}
+          durationMs={node.metrics.durationMs}
+          inputTokens={node.metrics.inputTokens}
+          outputTokens={node.metrics.outputTokens}
+          costUsd={node.metrics.costUsd}
+        />
+      </button>
+      {node.children.map((child) => renderBranch(child, depth + 1, selectedAgentId, onSelect))}
     </div>
   );
 }
@@ -41,6 +55,10 @@ function renderBranch(node: AgentHierarchyNode, depth: number) {
  * showing the single coordinator alone would not be a "hierarchy" either.
  */
 export function AgentTree({ sessionId }: AgentTreeProps) {
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent"));
+  });
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -64,6 +82,25 @@ export function AgentTree({ sessionId }: AgentTreeProps) {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    const updateSelection = () => {
+      setSelectedAgentId(agentIdFromSearchParam(new URLSearchParams(window.location.search).get("agent")));
+    };
+
+    window.addEventListener("popstate", updateSelection);
+    window.addEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    return () => {
+      window.removeEventListener("popstate", updateSelection);
+      window.removeEventListener(SESSION_URL_CHANGE_EVENT, updateSelection);
+    };
+  }, []);
+
+  const selectAgent = (agentId: string) => {
+    const eventId = eventIdFromSearchParam(new URLSearchParams(window.location.search).get("event"));
+    window.history.replaceState(window.history.state, "", sessionAgentUrl(sessionId, agentId, eventId));
+    window.dispatchEvent(new Event(SESSION_URL_CHANGE_EVENT));
+  };
+
   const content =
     state.status === "loading" ? (
       <p className="text-sm text-muted-foreground">Loading agent hierarchy…</p>
@@ -73,7 +110,7 @@ export function AgentTree({ sessionId }: AgentTreeProps) {
       <p className="text-sm text-muted-foreground">This session has no sub-agents.</p>
     ) : (
       <div data-slot="agent-tree" className="flex flex-col gap-1">
-        {state.nodes.map((node) => renderBranch(node, 0))}
+        {state.nodes.map((node) => renderBranch(node, 0, selectedAgentId, selectAgent))}
       </div>
     );
 

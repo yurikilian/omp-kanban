@@ -1,5 +1,5 @@
 // @vitest-environment node
-import type { FSWatcher } from "node:fs";
+import type * as NodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { watchAudits } from "./watcher";
 const fsWatchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof NodeFs>();
   return { ...actual, watch: fsWatchMock };
 });
 
@@ -32,7 +32,7 @@ function stubWatch() {
 
   fsWatchMock.mockImplementation((_: string, __: unknown, nextListener: WatchEventListener) => {
     listener = nextListener;
-    return { close } as unknown as FSWatcher;
+    return { close } as unknown as NodeFs.FSWatcher;
   });
 
   return {

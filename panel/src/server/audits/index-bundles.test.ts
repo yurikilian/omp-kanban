@@ -50,7 +50,11 @@ describe("indexing a bundle root (E4-S5-AC1, E4-S5-AC2, E4-S5-AC4)", () => {
   });
 
   it("reads a completed audit's metadata without loading evidence records (E4-S9-AC4)", () => {
-    const evidencePath = path.join(fixturesDir, "bundle-valid", "evidence.jsonl");
+    const bundleDir = path.join(fixturesDir, "bundle-valid");
+    const manifestPath = path.join(bundleDir, "manifest.json");
+    const auditPath = path.join(bundleDir, "audit.json");
+    const reportPath = path.join(bundleDir, "report.md");
+    const evidencePath = path.join(bundleDir, "evidence.jsonl");
     const readFileSync = vi.spyOn(fs, "readFileSync");
 
     try {
@@ -60,6 +64,10 @@ describe("indexing a bundle root (E4-S5-AC1, E4-S5-AC2, E4-S5-AC4)", () => {
       });
 
       expect(audit?.auditId).toBe("bundle-valid");
+      expect(readFileSync).toHaveBeenCalledTimes(2);
+      expect(readFileSync).toHaveBeenCalledWith(manifestPath, "utf8");
+      expect(readFileSync).toHaveBeenCalledWith(auditPath, "utf8");
+      expect(readFileSync).not.toHaveBeenCalledWith(reportPath, "utf8");
       expect(readFileSync).not.toHaveBeenCalledWith(evidencePath, "utf8");
     } finally {
       readFileSync.mockRestore();

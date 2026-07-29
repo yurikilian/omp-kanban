@@ -27,10 +27,11 @@ export function GenerateAuditButton({ sessionId, sessionTitle, eligibility }: Ge
     fetch(`/api/audits?sessionId=${encodeURIComponent(sessionId)}`)
       .then((response) => {
         if (!response.ok) throw new Error(`Failed to load audit: ${response.status}`);
-        return response.json() as Promise<AuditJob | null>;
+        return response.json() as Promise<AuditJob[]>;
       })
-      .then((job) => {
-        if (!cancelled && job) setAuditJob((currentJob) => currentJob ?? job);
+      .then((jobs) => {
+        const latestAuditJob = jobs[jobs.length - 1];
+        if (!cancelled && latestAuditJob) setAuditJob((currentJob) => currentJob ?? latestAuditJob);
       })
       .catch(() => {
         // A session without an audit is still usable even if a status refresh fails.

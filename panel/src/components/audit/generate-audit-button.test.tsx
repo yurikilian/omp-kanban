@@ -13,6 +13,13 @@ const AUDIT_JOB: AuditJob = {
   createdAt: "2026-01-01T09:11:00.000Z",
 };
 
+const EARLIER_AUDIT_JOB: AuditJob = {
+  ...AUDIT_JOB,
+  id: "audit_00000000-0000-4000-8000-000000000000",
+  status: "completed",
+  createdAt: "2026-01-01T09:10:00.000Z",
+};
+
 function mockJsonResponse(body: unknown, ok = true) {
   return { ok, status: ok ? 200 : 500, json: async () => body };
 }
@@ -22,8 +29,8 @@ afterEach(() => {
 });
 
 describe("GenerateAuditButton", () => {
-  it("names the detail session as its only audit target and offers no target picker (E4-S1-AC1)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse(null));
+  it("names the detail session as its only audit target, hides status for empty canonical history, and offers no target picker (E4-S1-AC1, E4-S6-AC4)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<GenerateAuditButton sessionId={SESSION_ID} sessionTitle={SESSION_TITLE} />);
@@ -34,11 +41,12 @@ describe("GenerateAuditButton", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(`/api/audits?sessionId=${encodeURIComponent(SESSION_ID)}`),
     );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("posts only the detail session to receive a queued audit id without browser analysis (E4-S1-AC2, E4-S1-AC5)", async () => {
     const fetchMock = vi.fn((url: string, options?: RequestInit) =>
-      Promise.resolve(options?.method === "POST" ? mockJsonResponse(AUDIT_JOB) : mockJsonResponse(null)),
+      Promise.resolve(options?.method === "POST" ? mockJsonResponse(AUDIT_JOB) : mockJsonResponse([])),
     );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -54,8 +62,8 @@ describe("GenerateAuditButton", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(`Audit ${AUDIT_JOB.id} is queued.`);
   });
 
-  it("shows the queued audit held by the runtime when the detail reloads (E4-S1-AC3)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse(AUDIT_JOB));
+  it("shows the latest durable audit from canonical history when the detail reloads (E4-S6-AC4)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockJsonResponse([EARLIER_AUDIT_JOB, AUDIT_JOB]));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<GenerateAuditButton sessionId={SESSION_ID} sessionTitle={SESSION_TITLE} />);

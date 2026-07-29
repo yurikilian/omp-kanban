@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@/server/sessions/types";
+import type { TimelineEvent } from "@/server/sessions/timeline";
+import { EventStream } from "../session/event-stream";
 import { SessionSearch } from "../session/session-search";
 import { LiveRegion } from "./live-region";
 
@@ -23,7 +25,11 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 describe("LiveRegion", () => {
-  it("announces a selection change without moving focus (E3-S11-AC3)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("announces a selection change without moving focus (E3-S11-AC4)", () => {
     const { rerender } = render(
       <>
         <button type="button">Keep focus</button>
@@ -51,5 +57,30 @@ describe("LiveRegion", () => {
     await user.type(screen.getByRole("searchbox"), "no matching session");
 
     expect(screen.getByRole("status")).toHaveTextContent("No sessions match your search.");
+  });
+
+  it("announces the timeline cursor moving without moving focus off the timeline (E3-S11-AC4)", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const events: TimelineEvent[] = [
+      { type: "status", id: "s1", timestamp: "2026-01-01T09:00:00.000Z", label: "Session started" },
+      { type: "prompt", id: "p1", timestamp: "2026-01-01T09:02:00.000Z", text: "Please refactor the billing module." },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => events }));
+
+    render(<EventStream sessionId="session-1" />);
+    await screen.findByText("Please refactor the billing module.");
+
+    const timeline = screen.getByLabelText("Session event timeline");
+    timeline.focus();
+
+    fireEvent.keyDown(timeline, { key: "j" });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Event 1 of 2: Session started");
+    expect(document.activeElement).toBe(timeline);
+
+    fireEvent.keyDown(timeline, { key: "j" });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Event 2 of 2: Please refactor the billing module.");
+    expect(document.activeElement).toBe(timeline);
   });
 });
